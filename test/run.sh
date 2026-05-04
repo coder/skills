@@ -155,8 +155,13 @@ assert '$TEMPLATE_NAME' in names, f'templates: {names}'
 print('ok: template', '$TEMPLATE_NAME')
 " || fail "templates verification failed"
 
-# 5) demo workspace. The build may still be running when claude
-# finishes; poll up to 5 minutes for it to finish.
+# 5) demo workspace.
+#
+# Coder reports two related fields:
+#   - latest_build.status:     workspace runtime status (running/stopped/failed/...)
+#   - latest_build.job.status: build job status (pending/running/succeeded/failed/...)
+# A successfully built and started workspace has job.status=succeeded AND
+# status=running. Poll up to 5 minutes for both.
 WS_DEADLINE=$(( $(date +%s) + 300 ))
 while :; do
   WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
@@ -167,17 +172,15 @@ d = json.load(sys.stdin)
 ws = [w for w in d.get('workspaces', []) if w['name'] == '$WORKSPACE_NAME']
 if not ws:
     print('missing'); raise SystemExit(0)
-w = ws[0]
-status = w['latest_build']['status']
-transition = w['latest_build']['transition']
-print(f'{status},{transition}')
+b = ws[0]['latest_build']
+print(f\"{b['job']['status']},{b['status']},{b['transition']}\")
 ")"
   case "$WS_STATE" in
-    succeeded,start)
-      echo "ok: workspace $WORKSPACE_NAME status=succeeded transition=start"
+    succeeded,running,start)
+      echo "ok: workspace $WORKSPACE_NAME job=succeeded status=running transition=start"
       break
       ;;
-    failed,*|canceled,*)
+    failed,*|canceled,*|*,failed,*|*,canceled,*)
       fail "workspace build $WS_STATE"
       ;;
     missing)
@@ -185,7 +188,7 @@ print(f'{status},{transition}')
       ;;
   esac
   if [ "$(date +%s)" -gt "$WS_DEADLINE" ]; then
-    fail "workspace did not reach succeeded,start within 5 minutes (last=$WS_STATE)"
+    fail "workspace did not reach succeeded,running,start within 5 minutes (last=$WS_STATE)"
   fi
   sleep 5
 done
