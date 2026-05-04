@@ -11,7 +11,7 @@ distributes one or more skills targeted at Coder operators and users.
 
 | Skill                                                | What it does                                                                                                                                                                                                                                                          |
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`install-coder`](skills/install-coder/SKILL.md)     | End-to-end install and first-run setup for a Coder deployment without using the web UI. Wraps `install.sh`, drives `coder login --first-user-*` for non-interactive admin bootstrap, pushes a starter template, and (optionally) creates a first workspace.            |
+| [`setup-coder`](skills/setup-coder/SKILL.md)     | End-to-end install and first-run setup for a Coder deployment without using the web UI. Wraps `install.sh`, drives `coder login --first-user-*` for non-interactive admin bootstrap, pushes a starter template, and (optionally) creates a first workspace.            |
 
 ## Install
 
@@ -20,14 +20,14 @@ plugins from it:
 
 ```text
 /plugin marketplace add coder/skills
-/plugin install install-coder@coder-skills
+/plugin install setup-coder@coder-skills
 ```
 
 After installing, the skill activates automatically when you ask
 Claude to install or set up Coder. You can also invoke it directly:
 
 ```text
-/install-coder
+/setup-coder
 ```
 
 For local development, point at a checkout instead of the GitHub
@@ -47,7 +47,7 @@ checkout with `--plugin-dir`:
 claude -p \
   --plugin-dir /path/to/skills \
   --permission-mode bypassPermissions \
-  "Use the install-coder skill to install Coder via Docker compose, \
+  "Use the setup-coder skill to install Coder via Docker compose, \
    bootstrap an admin user, push the docker starter template, and \
    create one workspace named demo."
 ```

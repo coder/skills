@@ -6,16 +6,18 @@
   },
   "metadata": {
     "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "homepage": "https://github.com/coder/skills",
+    "repository": "https://github.com/coder/skills"
   },
   "plugins": [
     {
-      "name": "install-coder",
-      "description": "Install and bootstrap a Coder deployment end-to-end from the CLI without using the web UI. Wraps install.sh, drives `coder login` for non-interactive first-user setup, pushes a starter template, and (optionally) creates a first workspace.",
+      "name": "setup-coder",
+      "description": "Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Use when the user wants to install Coder, set up Coder, run Coder locally / in Docker / on Kubernetes / on a VM, bootstrap the first admin user from the terminal, push a starter template, or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps install.sh, drives `coder login` for non-interactive first-user setup, pushes a starter template, and (optionally) creates a first workspace.",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/install-coder"
+        "./skills/setup-coder"
       ]
     }
   ]

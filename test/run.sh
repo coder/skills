@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# End-to-end test for the install-coder skill.
+# End-to-end test for the setup-coder skill.
 #
 # Drives `claude -p` with the marketplace in this repo and verifies the
 # resulting Coder deployment via the REST API. Designed to be safe to
 # run on a Coder workspace: the skill itself refuses a host install in
 # that case and falls back to Docker compose.
+#
+# The test sandboxes $HOME so the skill cannot accidentally write to the
+# user's real ~/.config/coderv2 or other state.
 
 set -euo pipefail
 
@@ -22,16 +25,20 @@ TEMPLATE_NAME="docker"
 WORKSPACE_NAME="demo"
 TIMEOUT_SECONDS="${CODER_TEST_TIMEOUT:-1500}"
 
-WORKDIR="$(mktemp -d -t install-coder-e2e.XXXXXX)"
+WORKDIR="$(mktemp -d -t setup-coder-e2e.XXXXXX)"
 TESTDIR="$WORKDIR/coder-test"
-mkdir -p "$TESTDIR"
+FAKE_HOME="$WORKDIR/home"
+mkdir -p "$TESTDIR" "$FAKE_HOME/.config"
 cd "$TESTDIR"
 
 cleanup() {
-  # Tear down only via Docker compose. Never `pkill coder`.
+  # Tear down only via Docker compose. Never `pkill coder` (it would
+  # kill the workspace agent if the test runs on a Coder workspace).
   if [ -f "$TESTDIR/docker-compose.yml" ]; then
     ( cd "$TESTDIR" && docker compose down -v --remove-orphans >/dev/null 2>&1 || true )
   fi
+  # Remove an orphan workspace container left by the demo template.
+  docker rm -f "coder-${USERNAME}-${WORKSPACE_NAME}" >/dev/null 2>&1 || true
   rm -rf "$WORKDIR"
 }
 if [ -z "${CODER_TEST_KEEP:-}" ]; then
@@ -49,8 +56,8 @@ fi
 
 PROMPT_FILE="$WORKDIR/prompt.txt"
 cat > "$PROMPT_FILE" <<EOF
-You are testing the install-coder skill end-to-end. You MUST use the
-install-coder skill. Follow every phase. Do not deviate.
+You are testing the setup-coder skill end-to-end. You MUST use the
+setup-coder skill. Follow every phase. Do not deviate.
 
 Constraints:
 
@@ -75,17 +82,19 @@ SUCCESS, PARTIAL, or FAILURE and a one-line reason.
 EOF
 
 echo "==> running claude -p (this may take several minutes)" >&2
-echo "==> testdir: $TESTDIR" >&2
+echo "==> testdir:   $TESTDIR" >&2
+echo "==> sandboxed HOME: $FAKE_HOME" >&2
 
 CLAUDE_OUT="$WORKDIR/claude-output.txt"
 set +e
-timeout "$TIMEOUT_SECONDS" claude -p \
-  --plugin-dir "$MARKETPLACE_DIR" \
-  --permission-mode bypassPermissions \
-  --output-format text \
-  --add-dir "$TESTDIR" \
-  < "$PROMPT_FILE" \
-  > "$CLAUDE_OUT" 2>&1
+HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" \
+  timeout "$TIMEOUT_SECONDS" claude -p \
+    --plugin-dir "$MARKETPLACE_DIR" \
+    --permission-mode bypassPermissions \
+    --output-format text \
+    --add-dir "$TESTDIR" \
+    < "$PROMPT_FILE" \
+    > "$CLAUDE_OUT" 2>&1
 CLAUDE_RC=$?
 set -e
 
@@ -108,50 +117,77 @@ fail() {
 # 1) /healthz
 curl -fsS "$ACCESS_URL/healthz" >/dev/null || fail "GET /healthz did not return 200"
 
-# 2) admin user
-SESSION_FILE="$TESTDIR/data/session"
-[ -s "$SESSION_FILE" ] || fail "session file missing at $SESSION_FILE"
-SESSION="$(cat "$SESSION_FILE")"
+# 2) Authenticate via the API.
+# The skill is allowed to put the session token wherever it wants
+# (filesystem session file, OS keyring, sandboxed $HOME). We don't
+# depend on the layout; we just log in with the credentials we asked
+# the skill to set.
+LOGIN_JSON="$(curl -fsS -X POST \
+  -H 'content-type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+  "$ACCESS_URL/api/v2/users/login")" \
+  || fail "login API failed (skill did not bootstrap the admin user)"
+SESSION="$(echo "$LOGIN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
+[ -n "$SESSION" ] || fail "empty session token from login API"
 
+# 3) users
 USERS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/users")" \
   || fail "GET /api/v2/users failed"
-echo "$USERS_JSON" | python3 -c '
+echo "$USERS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-assert d["count"] == 1, f"expected 1 user, got {d[\"count\"]}"
-u = d["users"][0]
-assert u["username"] == "'"$USERNAME"'", u
-assert u["email"] == "'"$EMAIL"'", u
-assert any(r["name"] == "owner" for r in u["roles"]), u
-print("ok: user", u["username"])
-' || fail "users verification failed"
+assert d['count'] == 1, f'expected 1 user, got {d[\"count\"]}'
+u = d['users'][0]
+assert u['username'] == '$USERNAME', u
+assert u['email'] == '$EMAIL', u
+assert any(r['name'] == 'owner' for r in u['roles']), u
+print('ok: user', u['username'])
+" || fail "users verification failed"
 
-# 3) docker template
+# 4) docker template
 TEMPLATES_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/organizations/default/templates")" \
   || fail "GET templates failed"
-echo "$TEMPLATES_JSON" | python3 -c '
+echo "$TEMPLATES_JSON" | python3 -c "
 import json, sys
 templates = json.load(sys.stdin)
-names = [t["name"] for t in templates]
-assert "'"$TEMPLATE_NAME"'" in names, f"templates: {names}"
-print("ok: template", "'"$TEMPLATE_NAME"'")
-' || fail "templates verification failed"
+names = [t['name'] for t in templates]
+assert '$TEMPLATE_NAME' in names, f'templates: {names}'
+print('ok: template', '$TEMPLATE_NAME')
+" || fail "templates verification failed"
 
-# 4) demo workspace
-WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
-  || fail "GET workspaces failed"
-echo "$WS_JSON" | python3 -c '
+# 5) demo workspace. The build may still be running when claude
+# finishes; poll up to 5 minutes for it to finish.
+WS_DEADLINE=$(( $(date +%s) + 300 ))
+while :; do
+  WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
+    || fail "GET /api/v2/workspaces failed"
+  WS_STATE="$(printf '%s' "$WS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-ws = [w for w in d.get("workspaces", []) if w["name"] == "'"$WORKSPACE_NAME"'"]
-assert ws, f"no workspace named '"$WORKSPACE_NAME"' in {[w[\"name\"] for w in d.get(\"workspaces\", [])]}"
+ws = [w for w in d.get('workspaces', []) if w['name'] == '$WORKSPACE_NAME']
+if not ws:
+    print('missing'); raise SystemExit(0)
 w = ws[0]
-status = w["latest_build"]["status"]
-transition = w["latest_build"]["transition"]
-assert status == "succeeded", f"latest build status={status}"
-assert transition == "start", f"latest transition={transition}"
-print("ok: workspace", w["name"], "status=", status, "transition=", transition)
-' || fail "workspace verification failed"
+status = w['latest_build']['status']
+transition = w['latest_build']['transition']
+print(f'{status},{transition}')
+")"
+  case "$WS_STATE" in
+    succeeded,start)
+      echo "ok: workspace $WORKSPACE_NAME status=succeeded transition=start"
+      break
+      ;;
+    failed,*|canceled,*)
+      fail "workspace build $WS_STATE"
+      ;;
+    missing)
+      fail "no workspace named $WORKSPACE_NAME"
+      ;;
+  esac
+  if [ "$(date +%s)" -gt "$WS_DEADLINE" ]; then
+    fail "workspace did not reach succeeded,start within 5 minutes (last=$WS_STATE)"
+  fi
+  sleep 5
+done
 
 echo "PASS"
-EOF

@@ -6,13 +6,18 @@ from the CLI.
 
 ## The canonical command
 
+Pass the password as an env var; the other fields can be either flags
+or env vars. Putting the password on the command line leaks it into
+shell history and `ps` listings.
+
 ```sh
+export CODER_FIRST_USER_PASSWORD="$PASSWORD"
 coder login "$ACCESS_URL" \
   --first-user-email     "$EMAIL" \
   --first-user-username  "$USERNAME" \
   --first-user-full-name "$FULL_NAME" \
-  --first-user-password  "$PASSWORD" \
   --first-user-trial=false
+unset CODER_FIRST_USER_PASSWORD
 ```
 
 After this:

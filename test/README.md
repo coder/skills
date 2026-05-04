@@ -1,4 +1,4 @@
-# install-coder skill tests
+# setup-coder skill tests
 
 This skill is tested with [`claude -p`](https://docs.claude.com/en/docs/claude-code/headless)
 in non-interactive mode against a real Coder server provisioned via
@@ -26,7 +26,7 @@ The script:
 1. Spins a clean test directory under `$TMPDIR` (or `/tmp`).
 2. Invokes `claude -p` with `--plugin-dir` pointing at the marketplace
    in this repo.
-3. Asks Claude to drive the `install-coder` skill.
+3. Asks Claude to drive the `setup-coder` skill.
 4. Independently verifies the server, admin user, template, and
    workspace via the Coder REST API.
 5. Prints `PASS` or `FAIL`.
@@ -41,6 +41,17 @@ After Claude finishes:
   template.
 - `GET /api/v2/workspaces` includes a workspace named `demo` with
   `latest_build.status = succeeded` and `transition = start`.
+
+## Sandbox
+
+The harness sandboxes `$HOME` and `$XDG_CONFIG_HOME` to a temporary
+directory under `$TMPDIR`. Anything the skill writes to `~/...`
+lands in the sandbox, not the user's real home, so a misbehaving run
+cannot clobber `~/.config/coderv2`, `~/.bash_history`, or other host
+state. The Docker daemon is shared with the host (the compose recipe
+binds the daemon socket), so containers and images created by the
+test persist on the host's docker daemon and are cleaned up by the
+harness's `cleanup` trap.
 
 ## Why Docker compose
 

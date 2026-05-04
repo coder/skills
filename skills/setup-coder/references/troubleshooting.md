@@ -5,17 +5,16 @@ Use this file when something breaks during Phases 2 through 6.
 
 ## Never `pkill coder` on a Coder workspace
 
-If the environment has `CODER_AGENT_TOKEN`, `CODER_WORKSPACE_NAME`,
-or `CODER=true` set, the host is **inside a Coder workspace**. The
-workspace agent is itself a `coder` process. Running `pkill coder`,
-`pkill -f coder`, or `killall coder` will kill the agent, sever the
-user's session, and stop the chat from being able to run any more
-shell commands.
+If the environment has `CODER_AGENT_TOKEN` or `CODER_WORKSPACE_NAME`
+set, the host is **inside a Coder workspace**. The workspace agent
+is itself a `coder` process. Running `pkill coder`, `pkill -f coder`,
+or `killall coder` will kill the agent, sever the user's session,
+and stop the chat from being able to run any more shell commands.
 
 Guard every cleanup or troubleshooting command with a check first:
 
 ```sh
-if [ -n "${CODER_AGENT_TOKEN-}${CODER_WORKSPACE_NAME-}" ] || [ "${CODER-}" = true ]; then
+if [ -n "${CODER_AGENT_TOKEN-}${CODER_WORKSPACE_NAME-}" ]; then
   echo "refusing to pkill coder on a Coder workspace" >&2
   exit 1
 fi
@@ -142,34 +141,46 @@ the template variables.
 
 ## Cleanup
 
-When the user wants to start over:
+> [!WARNING]
+> The commands in this section permanently destroy the database, every
+> workspace, and every template the user built. Run them only after
+> the user has explicitly asked to start over, delete everything, or
+> uninstall the deployment. Never run them on initiative. In headless
+> mode (under `claude -p --permission-mode bypassPermissions`), echo
+> the intent back to the user and require an explicit confirmation
+> token like `destroy-coder` before proceeding.
+
+When the user has confirmed they want to start over:
 
 ```sh
-# Refuse on a live Coder workspace.
-if [ -n "${CODER_AGENT_TOKEN-}${CODER_WORKSPACE_NAME-}" ] || [ "${CODER-}" = true ]; then
+# Refuse on a live Coder workspace; killing the agent disconnects the user.
+if [ -n "${CODER_AGENT_TOKEN-}${CODER_WORKSPACE_NAME-}" ]; then
   echo "refusing to clean up coder on a Coder workspace; tear down the workspace instead" >&2
   exit 1
 fi
 
-# Standalone server, started by this skill (PID was written to ~/.coder-server.pid)
+# Confirmation gate. Skip only if the user already confirmed in chat.
+read -r -p 'type "destroy-coder" to delete all Coder data: ' confirm
+[ "$confirm" = "destroy-coder" ] || { echo aborted; exit 0; }
+
+# Standalone server started by this skill (PID is in ~/.coder-server.pid)
 if [ -f "$HOME/.coder-server.pid" ]; then
   kill "$(cat "$HOME/.coder-server.pid")" 2>/dev/null || true
   rm -f "$HOME/.coder-server.pid"
 fi
 rm -rf "$HOME/.config/coderv2"
 
-# systemd
+# systemd (skip on a workspace; the early guard already returned)
 sudo systemctl stop coder && sudo systemctl disable coder
 
-# Docker compose
-docker compose down -v   # -v drops the database volume
+# Docker compose; -v drops the database volume
+docker compose down -v
 
 # Helm
 helm uninstall coder -n coder
 kubectl delete namespace coder
 ```
 
-`-v` and `delete namespace` blow away the database. Confirm with the
-user before running them. Never use `pkill coder`, `killall coder`,
-or `pkill -f coder`; on a Coder host that disconnects the user. Only
-kill the PID this skill recorded.
+Never use `pkill coder`, `killall coder`, or `pkill -f coder`. On a
+Coder host that disconnects the user. Only kill the PID this skill
+recorded.

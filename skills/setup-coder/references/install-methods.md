@@ -98,13 +98,28 @@ curl -fsSL https://coder.com/install.sh \
 Generate this file; do not edit a `compose.yaml` already in the user's
 working tree.
 
+> [!WARNING]
+> The credentials below are placeholders for a local demo. Before
+> using this compose file for anything that survives a reboot:
+>
+> - Replace `POSTGRES_PASSWORD` with a strong random value (e.g.
+>   `export POSTGRES_PASSWORD="$(openssl rand -base64 32)"`).
+> - Use `sslmode=require` in `CODER_PG_CONNECTION_URL` and provide
+>   real TLS for the database.
+> - Move the database off the same host (managed PG, RDS, Cloud
+>   SQL).
+> - Set `CODER_ACCESS_URL` to a real domain and front the `coder`
+>   service with TLS.
+>
+> Do not commit a populated `compose.yaml` with secrets to git.
+
 ```yaml
 services:
   database:
     image: "postgres:16"
     environment:
       POSTGRES_USER: coder
-      POSTGRES_PASSWORD: coder
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD before docker compose up}"
       POSTGRES_DB: coder
     volumes:
       - coder_data:/var/lib/postgresql/data
@@ -117,7 +132,7 @@ services:
   coder:
     image: ghcr.io/coder/coder:latest
     environment:
-      CODER_PG_CONNECTION_URL: "postgres://coder:coder@database/coder?sslmode=disable"
+      CODER_PG_CONNECTION_URL: "postgres://coder:${POSTGRES_PASSWORD}@database/coder?sslmode=disable"
       CODER_HTTP_ADDRESS: "0.0.0.0:7080"
       CODER_ACCESS_URL: "${CODER_ACCESS_URL:-http://localhost:7080}"
     group_add:
@@ -137,6 +152,8 @@ volumes:
 Boot:
 
 ```sh
+export POSTGRES_PASSWORD="$(openssl rand -base64 32)"
+export DOCKER_GROUP_ID="$(getent group docker | cut -d: -f3)"
 docker compose up -d
 ```
 
