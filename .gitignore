@@ -1,0 +1,8 @@
+# Pinned in the marketplace; CI may pin a later version.
+.DS_Store
+node_modules/
+*.log
+*.tmp
+*.swp
+.vscode/
+.idea/
