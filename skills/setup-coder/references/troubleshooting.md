@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Short list. The full doc is at <https://coder.com/docs/admin/setup>.
-Use this file when something breaks during Phases 2 through 6.
+Use this file when something breaks during Phases 2 through 8.
 
 ## Never `pkill coder` on a Coder workspace
 
@@ -88,11 +88,69 @@ server logs `tls: failed to find any PEM data` and exits. Re-run with
 The host has no outbound internet, or `*.try.coder.app` is blocked.
 Switch to a real access URL or `http://localhost:7080`.
 
+### TLS certificate doesn't include the wildcard
+
+`/healthz` succeeds for `coder.example.com` but
+`app-x.coder.example.com` fails with a TLS SAN mismatch. Reissue the
+cert with both names in the SAN list. cert-manager
+`Certificate.spec.dnsNames` must include both `coder.example.com` and
+`*.coder.example.com`. See `wildcard-tls.md`.
+
+### Wildcard subdomain doesn't resolve
+
+`dig +short app-x.coder.example.com` returns nothing while the apex
+resolves. The wildcard A or AAAA record is missing. Add
+`*.coder.example.com` pointing at the same address as the apex and
+wait for the TTL.
+
+### `Host` header lost behind a proxy
+
+Apps load the dashboard instead of the workspace app. The reverse
+proxy rewrote `Host` to its upstream service name. Configure it to
+preserve the original `Host` (nginx: `proxy_set_header Host $host;`).
+
 ## Phase 4: first-user bootstrap fails
 
 See `first-user.md` for the canonical failure list.
 
-## Phase 5: template push fails
+## Phase 5: external services (production only)
+
+### `redirect URI is not valid` from GitHub
+
+The OAuth App's authorization callback URL doesn't match
+`<access-url>/external-auth/<id>/callback` exactly. Trailing slash,
+scheme mismatch, or wrong `CODER_EXTERNAL_AUTH_0_ID`. Fix the
+callback in the OAuth App; don't restart Coder.
+
+### Provider missing from `/api/v2/external-auth`
+
+The `CODER_EXTERNAL_AUTH_0_*` env vars aren't reaching the running
+server, or the indexing has a gap. Verify on the running container:
+
+```sh
+kubectl exec -n coder deploy/coder -- env | grep CODER_EXTERNAL_AUTH
+```
+
+Index 0 must exist before index 1, and so on.
+
+### Two "Continue with GitHub" buttons
+
+`CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE` was left at the
+default `true`. Set it to `false` and roll out.
+
+### `coder provisioner list` shows the daemon offline
+
+The daemon connected once but lost the websocket. Check its log for
+`401 unauthorized` (key revoked or org mismatch) or network errors.
+Rotate the key if the old one was leaked.
+
+### Build hangs in `pending` with an external provisioner
+
+The template tags don't match any online daemon's tags. Confirm with
+`coder provisioner list --output json | jq '.[].tags'` and compare to
+the template's `--provisioner-tag` set. Fix one side.
+
+## Phase 6: template push fails
 
 ### "context deadline exceeded" during build
 
@@ -101,17 +159,20 @@ The provisioner can't reach the cloud or the local Docker daemon.
 - Docker: run `docker info` from the host running `coder server`. If
   it fails, fix the Docker daemon first.
 - Kubernetes: `kubectl auth can-i create pods -n coder`. If no, fix
-  RBAC; the workspace pod runs in the namespace named in the template's
-  `namespace` variable.
+  RBAC; the workspace pod runs in the namespace named in the
+  template's `namespace` variable.
 - Cloud: missing or wrong credentials. See
-  `templates.md#provider-credentials`.
+  `templates.md#provider-credentials` (or
+  `external-provisioner.md` if cloud creds live on a separate
+  daemon).
 
 ### "no provisioner daemons available"
 
-The server runs a provisioner by default; this error means it's
-disabled or oversubscribed. Restart the server with
-`--provisioner-daemons 1` or run a separate provisioner with
-`coder provisioner start`.
+The server's built-in provisioner is disabled or oversubscribed, and
+no external daemon picked the job up. Either restart the server with
+`--provisioner-daemons 1`, run a separate provisioner with
+`coder provisioner start`, or fix the tag mismatch (see
+`external-provisioner.md`).
 
 ### Template version stays in `pending`
 
@@ -123,7 +184,7 @@ coder provisioner jobs list
 coder templates versions list <name>
 ```
 
-## Phase 6: workspace creation fails
+## Phase 7: workspace creation fails
 
 ### "template requires a parameter"
 

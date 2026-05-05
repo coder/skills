@@ -1,6 +1,6 @@
 ---
 name: setup-coder
-description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Use when the user wants to "install Coder", "set up Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup, pushes a starter template, and (optionally) creates a first workspace.
+description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup, optionally registers external auth and an external provisioner, pushes a starter template, and (optionally) creates a first workspace.
 ---
 
 # setup-coder
@@ -10,19 +10,25 @@ ever opening the Coder web UI.
 
 The web UI works fine for setup. This skill exists so the user can run
 one scripted, repeatable, CLI-only path: install, start the server,
-bootstrap the admin user, push a starter template, optionally create a
-workspace, and surface the credentials. It is the right path for
-demos, headless boxes, automation, and anyone who explicitly says they
-don't want to touch the UI.
+bootstrap the admin user, optionally wire up TLS, external auth, and
+an external provisioner, push a starter template, optionally create
+a workspace, and surface the credentials. It is the right path for
+demos, headless boxes, automation, team rollouts, and anyone who
+explicitly says they don't want to touch the UI.
 
 ## When to use this skill
 
 Activate when the user says any of:
 
-- "Install Coder", "set up Coder", "get me started with Coder",
-  "bootstrap Coder".
+- "Install Coder", "set up Coder", "deploy Coder", "get me started
+  with Coder", "bootstrap Coder", "stand up Coder for my team".
 - "Run Coder on this machine", "run Coder in Docker", "deploy Coder
   on Kubernetes", "Coder on AWS / GCP / Azure / DigitalOcean".
+- "Put Coder behind HTTPS", "behind Caddy / nginx / cert-manager",
+  "with a wildcard domain", "with TLS / Let's Encrypt".
+- "Wire up GitHub for our templates", "let workspaces clone private
+  repos", "external auth".
+- "Run an external provisioner", "keep cloud creds off the server".
 - "I don't want to touch the UI", "do it from the terminal", "headless
   setup", "non-interactive first-user setup".
 - "Create the first admin user from the CLI".
@@ -39,13 +45,16 @@ Follow these phases in order. Each has a clear exit criterion. Confirm
 before any destructive action (system package install, opening ports,
 overwriting kubeconfigs, deleting volumes).
 
-1. **Discover** the target environment and what the user wants.
+1. **Discover** the target environment, deployment mode, and what the
+   user wants.
 2. **Install** the Coder binary or Helm chart via `install.sh`.
 3. **Start** the Coder server.
 4. **Bootstrap** the first admin user with `coder login --first-user-*`.
-5. **Template**: push a starter that matches the chosen infrastructure.
-6. **Workspace** (optional): create the user's first workspace.
-7. **Summarize** with credentials, URLs, and next steps.
+5. **External services** (production only; optional): register external
+   auth, run an external provisioner. Skip in trial mode.
+6. **Template**: push a starter that matches the chosen infrastructure.
+7. **Workspace** (optional): create the user's first workspace.
+8. **Summarize** with credentials, URLs, and next steps.
 
 ### Phase 1: Discover
 
@@ -85,35 +94,78 @@ systemctl is-active coder 2>/dev/null
 test -f "$HOME/.config/coderv2/url" && cat "$HOME/.config/coderv2/url"
 ```
 
-Then ask only what you still need:
+#### Pick the deployment mode
 
-- **Install target**: standalone host (recommended for solo or single
-  VM), Docker compose, or Kubernetes via Helm.
-- **Access URL**: pick exactly one. Never proceed without an
-  explicit choice from the user; access-URL drift is the single most
-  common cause of confused users.
-  1. A real domain you own (recommended for any internet-facing or
-     multi-user deployment).
-  2. `http://localhost:<port>` (local-only, workspaces unreachable
-     from outside the host).
-  3. The built-in `*.try.coder.app` tunnel (publicly exposed, trial
-     use only). Do not default to this. If the user picks it,
-     surface the public-exposure caveat before starting the server.
-- **First-user credentials**: email, username, optional full name, and a
-  password. Generate a strong password if the user has no preference
-  (`openssl rand -base64 18 | tr -d '/+=' | head -c 24`). Print it once
-  at the end of Phase 7. Only persist it to disk if the user explicitly
-  asks; see Phase 7 for the safe-write recipe.
-- **Starter template**: choose from the matrix in
-  `references/templates.md`. Default to the template that matches the
-  infrastructure (Docker -> `docker`, Kubernetes -> `kubernetes`,
-  EC2 -> `aws-linux`, etc.).
-- **Create a workspace?**: yes/no. Default yes for solo local installs;
-  default no for shared, multi-user setups.
+Decide between **trial** and **production** before anything else.
+Almost every later choice (access URL, database, TLS, external auth,
+provisioner topology) follows from the mode.
 
-If the user has not expressed a preference, propose a default plan and
-ask for a single yes/no confirmation before doing anything that mutates
-the system.
+| Signal                                                | Mode       |
+|-------------------------------------------------------|------------|
+| "Try Coder", "kick the tires", "demo", "play with it" | trial      |
+| Localhost, single host, single user, throwaway        | trial      |
+| Real domain named (`coder.example.com`)               | production |
+| HTTPS / TLS / Let's Encrypt / cert-manager mentioned  | production |
+| "For my team", "for the company", "staging"           | production |
+| GitHub / GitLab / OIDC mentioned                      | production |
+| Cloud workspaces with shared cloud account            | production |
+
+When the signals conflict, ask. Don't guess.
+
+`references/production.md` is the entry point for the production
+path. Read it before continuing into Phase 2 if you've picked
+production.
+
+#### Things to ask, by mode
+
+**Trial mode** (defaults that are usually fine):
+
+- **Install target**: standalone host, Docker compose, or Kubernetes
+  via Helm. Default to compose if Docker is available; otherwise
+  standalone.
+- **Access URL**: pick exactly one. Never proceed without an explicit
+  choice.
+  1. `http://localhost:<port>` (recommended for trial; workspaces
+     reachable only from the host).
+  2. The built-in `*.try.coder.app` tunnel (publicly exposed; only if
+     the user explicitly asked for a public URL with no DNS work).
+- **First-user credentials**: email, username, optional full name, and
+  a password. Generate a strong one if the user has no preference
+  (`openssl rand -base64 18 | tr -d '/+=' | head -c 24`). Print it
+  once at the end of Phase 8.
+- **Starter template**: default to `docker` for compose / standalone
+  with Docker; `kubernetes` for Helm.
+- **Create a workspace?**: default yes for trial.
+
+**Production mode**: collect every input before mutating anything.
+Minimum input set:
+
+- Real HTTPS access URL (`https://coder.example.com`); never the
+  tunnel.
+- Wildcard URL (`*.coder.example.com`). Both names must resolve
+  before starting.
+- TLS termination point: at the Coder server (PEM files) or at a
+  reverse proxy / ingress. Pick one.
+- Managed PostgreSQL connection string. Built-in PG is trial-only.
+- External-auth fields if GitHub / GitLab / etc. is in scope: client
+  ID, secret, chosen `CODER_EXTERNAL_AUTH_0_ID`.
+- Scoped provisioner key (`coder provisioner keys create`) if cloud
+  workspaces are in scope.
+- First-user credentials. Don't randomize the password in production;
+  let the user pick.
+- Starter template matching the cloud (`aws-linux`, `kubernetes`,
+  etc.). Helm on Kubernetes is the default install target for
+  production; standalone or compose only fits a single-VM deploy.
+
+Full decision matrix and order of operations:
+`references/production.md`. Per-topic detail in `wildcard-tls.md`,
+`external-auth-github.md`, and `external-provisioner.md`.
+
+If the user has not expressed a preference, propose a default plan
+and ask for a single yes/no confirmation before doing anything that
+mutates the system. In production mode, also echo back the planned
+DNS records, env vars (without secret values), and ingress hostnames
+so the user can spot-check before the server starts.
 
 ### Phase 2: Install
 
@@ -159,26 +211,31 @@ Docker compose and Kubernetes (Helm): see `references/install-methods.md`.
 Both wrap the same binary, so the rest of this skill applies to all
 three.
 
+For production, Helm on Kubernetes or compose with a managed PG is
+the recommended layout. `references/wildcard-tls.md` shows the
+canonical Helm values file with TLS, ingress, and the wildcard
+hostname wired up.
+
 Verify with `coder --version`. Exit criterion: the binary runs.
 
 ### Phase 3: Start the server
 
-Standalone:
+#### Trial path
 
 ```sh
 coder server --access-url "$ACCESS_URL" --http-address 127.0.0.1:7080
 ```
 
-Always pass `--access-url` explicitly, with the value the user
-picked in Phase 1. Never omit the flag and rely on the implicit
+Always pass `--access-url` explicitly, with the value the user picked
+in Phase 1. Never omit the flag and rely on the implicit
 `*.try.coder.app` tunnel; that tunnel is publicly reachable and the
 user must opt into it knowingly.
 
 Run the server in the background and capture logs to a file. Three
 options, pick the first that fits:
 
-- **systemd**: the install script can register a `coder` service. Use
-  it on production-like Linux hosts.
+- **systemd**: the install script can register a `coder` service.
+  Use it on production-like Linux hosts.
 - **nohup**: minimal, works everywhere.
   ```sh
   nohup coder server --access-url "$ACCESS_URL" \
@@ -202,6 +259,47 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 ```
+
+#### Production path
+
+The server is configured by env, not flags. Set the access URL,
+wildcard URL, TLS, and database connection on the deployment manifest
+(Helm values or compose `environment:` block), not as CLI args.
+
+Minimum env for a Helm or compose deploy:
+
+```sh
+CODER_ACCESS_URL=https://coder.example.com
+CODER_WILDCARD_ACCESS_URL=*.coder.example.com
+CODER_PG_CONNECTION_URL=postgres://coder:${PASSWORD}@db.internal:5432/coder?sslmode=require
+# TLS at the server (omit if a proxy / ingress terminates):
+CODER_TLS_ENABLE=true
+CODER_TLS_ADDRESS=0.0.0.0:443
+CODER_TLS_CERT_FILE=/etc/coder/tls/fullchain.pem
+CODER_TLS_KEY_FILE=/etc/coder/tls/privkey.pem
+CODER_REDIRECT_TO_ACCESS_URL=true
+```
+
+Roll it out (`helm upgrade`, `docker compose up -d`) and wait for
+readiness against the public URL:
+
+```sh
+for _ in $(seq 1 120); do
+  if curl -fsS https://coder.example.com/healthz >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+```
+
+Verify the wildcard resolves end-to-end:
+
+```sh
+curl -fsS https://app-test.coder.example.com/healthz
+```
+
+Both must return 200 before continuing. Full env-var matrix and
+common failures: `references/wildcard-tls.md`.
 
 ### Phase 4: Bootstrap the first admin user
 
@@ -249,7 +347,61 @@ row with `OWNER` in the roles column.
 For trial-license setup, persistent tokens, and the full failure list,
 read `references/first-user.md` before running this phase.
 
-### Phase 5: Push a starter template
+### Phase 5: External services (production only)
+
+Skip this phase entirely in trial mode.
+
+In production, do these in order. Each is independent of the others
+but template push (Phase 6) often depends on both.
+
+#### Register external auth (usually GitHub)
+
+Lets templates `coder_external_auth` against GitHub so workspaces
+can clone private repos without baked-in PATs. Full walkthrough:
+`references/external-auth-github.md`. Summary:
+
+1. Pick a provider ID (`primary-github`).
+2. Register a GitHub OAuth App with callback URL
+   `https://coder.example.com/external-auth/<id>/callback`.
+3. Set on the server:
+   ```sh
+   CODER_EXTERNAL_AUTH_0_ID=primary-github
+   CODER_EXTERNAL_AUTH_0_TYPE=github
+   CODER_EXTERNAL_AUTH_0_CLIENT_ID=<id>
+   CODER_EXTERNAL_AUTH_0_CLIENT_SECRET=<secret>
+   CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false
+   ```
+4. Roll out the deployment.
+5. Verify with `GET /api/v2/external-auth`.
+
+#### Run an external provisioner
+
+Keeps cloud credentials off the Coder server and lets you scale
+parallel builds. Full walkthrough: `references/external-provisioner.md`.
+Summary:
+
+1. Generate a scoped key:
+   ```sh
+   coder provisioner keys create cloud-provisioner \
+     --org default --tag environment=cloud
+   ```
+2. Run the daemon (separate VM, container, or Helm release) with:
+   ```sh
+   CODER_URL=https://coder.example.com
+   CODER_PROVISIONER_DAEMON_KEY=<key>
+   AWS_ACCESS_KEY_ID=...
+   AWS_SECRET_ACCESS_KEY=...
+   coder provisioner start --tag environment=cloud
+   ```
+3. Verify with `coder provisioner list` (online, tagged).
+4. Tag templates pushed in Phase 6 with the same `environment=cloud`
+   so the in-server provisioner doesn't claim cloud builds.
+
+If the deployment only ever runs Docker templates against the Coder
+host's own Docker socket, skip this; the in-server provisioner is
+fine.
+
+### Phase 6: Push a starter template
 
 Pick the template that matches the install target. The full matrix
 with required parameters lives in `references/templates.md`.
@@ -261,23 +413,19 @@ coder templates init --id "$TEMPLATE_ID" "$TEMPLATE_DIR"
 coder templates list
 ```
 
-Cloud templates need real provider credentials before `templates push`
-will succeed (or before workspaces will build, depending on the
-template). Collect them with `read -r -s` so they don't echo, then
-export into the **server's** environment, never the CLI's:
+When an external provisioner is in use (Phase 5), tag the push so
+the matching daemon picks the build up:
 
 ```sh
-read -r -s -p 'AWS_ACCESS_KEY_ID: ' AWS_ACCESS_KEY_ID; echo
-read -r -s -p 'AWS_SECRET_ACCESS_KEY: ' AWS_SECRET_ACCESS_KEY; echo
-export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION=us-east-1
-# Restart the server so the provisioner inherits these.
-coder server --access-url "$ACCESS_URL" ...
+coder templates push "$TEMPLATE_NAME" \
+  --provisioner-tag environment=cloud --yes
 ```
 
-Never echo the values back to the user, never put them in
-`terraform.tfvars`, and never pass them as `--variable` (they leak
-into every template version and the audit log). See
-`references/templates.md#provider-credentials`.
+Cloud templates need real provider credentials before `templates push`
+will succeed (or before workspaces will build, depending on the
+template). With an external provisioner, set them on the **provisioner's**
+environment, not the server's. Without one, set them on the server's
+environment (and accept that the server now has cloud creds).
 
 For non-secret template variables, use `--variables-file`:
 
@@ -292,7 +440,12 @@ coder templates push "$TEMPLATE_NAME" --variables-file /tmp/vars.yaml --yes
 The format is YAML key/value pairs (`codersdk.ParseUserVariableValues`
 unmarshals it directly).
 
-### Phase 6: Create a workspace (optional)
+Never echo secret values back to the user, never put them in
+`terraform.tfvars`, and never pass them as `--variable` (they leak
+into every template version and the audit log). See
+`references/templates.md#provider-credentials`.
+
+### Phase 7: Create a workspace (optional)
 
 If the user wants a workspace right away:
 
@@ -308,20 +461,23 @@ For the `docker` starter, no parameters are required. For
 `kubernetes`, the namespace must already exist (the template assumes
 the server has RBAC to create pods in it).
 
-### Phase 7: Summarize
+### Phase 8: Summarize
 
 Print one block at the end, clearly delimited:
 
 ```text
 === Coder is ready ===
-Access URL:    $ACCESS_URL
-Username:      $USERNAME
-Email:         $EMAIL
-Password:      $PASSWORD       (record now; no recovery path)
-Template:      $TEMPLATE_NAME
-Workspace:     $WORKSPACE_NAME (or: not created)
-Server log:    $HOME/.coder-server.log
-Stop:          kill "$(cat ~/.coder-server.pid)"
+Access URL:      $ACCESS_URL
+Wildcard URL:    $WILDCARD_URL    (production only)
+Username:        $USERNAME
+Email:           $EMAIL
+Password:        $PASSWORD        (record now; no recovery path)
+Template:        $TEMPLATE_NAME
+Workspace:       $WORKSPACE_NAME  (or: not created)
+External auth:   $EXTERNAL_AUTH_ID (or: not configured)
+Provisioner:     external @ $PROVISIONER_HOST (or: built-in)
+Server log:      $HOME/.coder-server.log
+Stop:            kill "$(cat ~/.coder-server.pid)"
 ```
 
 Replace the `Stop:` line with the right command for the install
@@ -332,6 +488,16 @@ method:
 - Docker compose: `docker compose down` (add `-v` only when the user
   has explicitly asked to delete the database)
 - Helm: `helm uninstall coder -n coder`
+
+For production deploys, also remind the user to record:
+
+- The GitHub OAuth App's client ID / callback URL (rotating the
+  secret later requires both).
+- The external provisioner key fingerprint.
+- The TLS cert and DNS records.
+
+These don't have a "show me again" command; back them up out of
+band.
 
 **Password handling.** Never write the password to a file unless the
 user explicitly asks ("save the password", "write it to disk", etc.).
@@ -373,10 +539,11 @@ closed. Print it once and let the user record it.
   installer's unit and override with a drop-in at
   `/etc/systemd/system/coder.service.d/override.conf`.
 - Do not write the admin password to disk silently. Print it once at
-  the end of Phase 7 and only persist it after the user opts in. When
-  you do persist it, use the `umask 0077` recipe in Phase 7.
-- Do not echo cloud credentials, tokens, or the admin password back
-  to the user. Confirm receipt with `[set]` or a redacted form.
+  the end of Phase 8 and only persist it after the user opts in. When
+  you do persist it, use the `umask 0077` recipe in Phase 8.
+- Do not echo cloud credentials, OAuth client secrets, provisioner
+  keys, or the admin password back to the user. Confirm receipt with
+  `[set]` or a redacted form.
 - Do not start a trial license unless the user asked. Default to
   `--first-user-trial=false`.
 - Do not omit `--access-url`. The implicit `*.try.coder.app` tunnel
@@ -385,8 +552,21 @@ closed. Print it once and let the user record it.
   server` exit doesn't mean the API is up.
 - Do not run `coder server` in a foreground that ties up the chat.
   Background it and tail the log.
-- Do not push a cloud template before the server has its provider
-  credentials in scope. The first workspace build will hang.
+- Do not push a cloud template before either the server or an
+  external provisioner has its provider credentials in scope. The
+  first workspace build will hang.
+- Do not put the production server's cloud credentials in
+  `--variable`, `terraform.tfvars`, or any artifact that ends up in
+  the audit log. Set them on the server (or the provisioner's)
+  environment instead.
+- Do not run a production server without `CODER_WILDCARD_ACCESS_URL`
+  if the user expects `coder_app` ports, embedded VS Code, or web
+  terminals to work. The skill's Phase 1 collects the wildcard URL
+  for production mode; don't skip it.
+- Do not register a custom GitHub external auth provider while
+  `CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE` is left at the
+  default `true`. The dashboard ends up with two "Continue with
+  GitHub" buttons.
 
 ## References
 
@@ -396,9 +576,17 @@ closed. Print it once and let the user record it.
   template matrix and required variables.
 - [`references/first-user.md`](references/first-user.md) - `coder
   login` flags, env vars, and edge cases.
+- [`references/production.md`](references/production.md) - deployment
+  mode decision matrix, order of operations, scope boundaries.
+- [`references/wildcard-tls.md`](references/wildcard-tls.md) - DNS,
+  wildcard subdomain, TLS termination options, Helm values.
+- [`references/external-auth-github.md`](references/external-auth-github.md) -
+  GitHub OAuth App registration and `CODER_EXTERNAL_AUTH_*` env vars.
+- [`references/external-provisioner.md`](references/external-provisioner.md) -
+  scoped keys, provisioner tags, AWS / GCP / Azure isolation.
 - [`references/troubleshooting.md`](references/troubleshooting.md) -
   readiness probe failures, port conflicts, sudo and SELinux issues,
-  Helm rollback, cleanup.
+  Helm rollback, TLS failures, OAuth failures, cleanup.
 
 For background on Coder concepts (templates vs workspaces vs agents),
 the canonical docs at <https://coder.com/docs> are authoritative.

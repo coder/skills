@@ -40,7 +40,8 @@ After Claude finishes:
 - `GET /api/v2/organizations/default/templates` includes the `docker`
   template.
 - `GET /api/v2/workspaces` includes a workspace named `demo` with
-  `latest_build.status = succeeded` and `transition = start`.
+  `latest_build.job.status = succeeded`, `latest_build.status =
+  running`, and `transition = start`.
 
 ## Sandbox
 
@@ -61,3 +62,38 @@ so a host-level install or any blanket `pkill coder` would terminate
 the user's session. The skill itself refuses to do a host install
 when `CODER_AGENT_TOKEN` is set; the test asserts that constraint
 holds by leaving Docker compose as the only viable path.
+
+## Production path
+
+`run.sh` covers the trial path only. The production-mode workflow
+(real domain, wildcard URL, TLS, GitHub external auth, external
+provisioner) needs DNS, an OAuth App, and a TLS issuer that the
+harness can't provide on its own without a kind cluster + self-
+signed CA + stub OAuth server. That harness is not in the repo
+yet; the production path is currently exercised manually.
+
+Manual verification recipe (against a real cluster you control):
+
+1. Run the skill with the production-mode prompt:
+
+   ```sh
+   claude --plugin-dir . --permission-mode bypassPermissions \
+     "Use setup-coder to deploy Coder on Kubernetes at \
+      https://coder.example.com with wildcard *.coder.example.com, \
+      TLS via cert-manager, GitHub external auth (OAuth App client \
+      ID and secret in $GITHUB_CLIENT_ID / $GITHUB_CLIENT_SECRET), \
+      and one external provisioner with tag environment=cloud. \
+      Push the aws-linux template tagged environment=cloud and \
+      create one workspace."
+   ```
+
+2. Verify via REST:
+
+   - `GET https://coder.example.com/healthz` returns 200.
+   - `GET https://app-test.coder.example.com/healthz` returns 200
+     (proves wildcard DNS + TLS).
+   - `GET /api/v2/external-auth` lists the GitHub provider.
+   - `GET /api/v2/provisionerdaemons` lists the external daemon as
+     online with the expected tags.
+   - `GET /api/v2/workspaces` shows the workspace with
+     `latest_build.status = running`.
