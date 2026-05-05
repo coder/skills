@@ -9,9 +9,9 @@ a working directory, then `coder templates push <name>` to publish it.
 
 | Install target              | Template ID               | Required parameters / variables       |
 |-----------------------------|---------------------------|---------------------------------------|
-| Local Docker                | `docker`                  | None                                  |
-| Local Docker, devcontainers | `docker-devcontainer`     | None                                  |
-| Local Docker, envbuilder    | `docker-envbuilder`       | None                                  |
+| Local Docker                | `docker`                  | Varies; pull the template and check |
+| Local Docker, devcontainers | `docker-devcontainer`     | Varies; pull the template and check |
+| Local Docker, envbuilder    | `docker-envbuilder`       | Varies; pull the template and check |
 | Kubernetes                  | `kubernetes`              | `namespace`, `use_kubeconfig`         |
 | Kubernetes, devcontainer    | `kubernetes-devcontainer` | `namespace`                           |
 | AWS EC2 Linux               | `aws-linux`               | `region`, IAM role / credentials      |
@@ -25,7 +25,7 @@ a working directory, then `coder templates push <name>` to publish it.
 | DigitalOcean droplet        | `digitalocean-linux`      | DO API token                          |
 | Nomad                       | `nomad-docker`            | Nomad address                         |
 | Incus                       | `incus`                   | Incus socket / remote                 |
-| Tasks (Coder Tasks)         | `tasks-docker`            | None                                  |
+| Tasks (Coder Tasks)         | `tasks-docker`            | Varies; pull the template and check |
 | Bare scratch (advanced)     | `scratch`                 | Author the resource yourself          |
 
 ## Default mapping
@@ -66,6 +66,36 @@ For Azure:
 
 - Use a Service Principal. Set `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`,
   `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID` in the server environment.
+
+## Discovering required parameters
+
+
+The `Required parameters / variables` column above is a starting
+point, not a contract. Templates evolve; the bundled `docker`
+starter currently includes a `jetbrains` module whose `jetbrains_ides`
+parameter has no default, and other modules can land in any starter
+between Coder releases.
+
+Before `coder create`, pull the active template and read its
+`coder_parameter` blocks:
+
+```sh
+coder templates pull "$TEMPLATE_NAME" "/tmp/${TEMPLATE_NAME}-pull"
+grep -nA 6 'data "coder_parameter"' "/tmp/${TEMPLATE_NAME}-pull/main.tf"
+```
+
+For every block where `default` is missing, pass `--parameter
+name=value` to `coder create`. The CLI parses values per type:
+
+- `string`: `--parameter 'cpu=2'`
+- `bool`: `--parameter 'enable_x=true'`
+- `number`: `--parameter 'memory=4'`
+- `list(string)`, `map(string)`, object: JSON-encoded.
+  `--parameter 'jetbrains_ides=[]'` for an empty list,
+  `--parameter 'features=["a","b"]'` for a non-empty one.
+
+Without a value for a required parameter, `coder create` blocks on
+stdin and the headless flow hangs.
 
 ## Variables files
 

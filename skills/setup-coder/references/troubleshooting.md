@@ -189,7 +189,9 @@ coder templates versions list <name>
 ### "template requires a parameter"
 
 Re-run with `--parameter "name=value"` for each missing param. To
-see the full list, run `coder templates show <name>`.
+see the full list, run `coder templates pull <name> <dir>` and read
+`<dir>/main.tf` for the `data "coder_parameter"` blocks. List/map
+parameters need a JSON value (e.g. `--parameter 'jetbrains_ides=[]'`).
 
 ### "build job failed"
 
@@ -199,6 +201,58 @@ coder show <workspace> --output text
 
 The provisioner logs are inline. Read the Terraform error and fix
 the template variables.
+
+### Workspace agent can't reach the server
+
+Symptom: `coder list` shows the workspace as `running` but the
+agent stays in `lifecycle=created status=connecting`. The container
+started, the agent's init script is curling
+`http://host.docker.internal:7080/bin/coder-linux-amd64`, and the
+request is timing out.
+
+The `docker` starter resolves the server via `host.docker.internal`,
+which points at the docker bridge gateway (typically `172.17.0.1`),
+not the container's loopback. A `coder server --http-address
+127.0.0.1:7080` bind is unreachable from the container.
+
+Check what the container sees:
+
+```sh
+docker exec coder-${USERNAME}-${WORKSPACE_NAME} sh -c \
+  'getent hosts host.docker.internal; \
+   curl -v --max-time 3 http://host.docker.internal:7080/healthz 2>&1 | tail -10'
+```
+
+Fix one of:
+
+1. **Rebind the server to all interfaces.** Stop the server (kill
+   the PID in `~/.coder-server.pid`), restart with `--http-address
+   0.0.0.0:7080`. The access URL stays `http://localhost:7080`.
+2. **Switch to Docker compose.** The compose recipe puts the server
+   inside the same docker network as the workspace; `host.docker.internal`
+   isn't involved and host firewalls don't apply.
+3. **Use `network_mode = "host"` in the template** (least clean;
+   requires editing the starter).
+
+### NixOS firewall blocks docker bridge
+
+Symptom: server bound to `0.0.0.0:7080`, `ss -tlnp` shows the
+listener, but the `curl` from inside the workspace container still
+times out. NixOS's stateful `nixos-fw` chain drops new connections
+on interfaces that aren't in `networking.firewall.trustedInterfaces`,
+including the docker bridge.
+
+Fastest fix (reversible, lasts until reboot):
+
+```sh
+sudo iptables -I nixos-fw -i docker0 -p tcp --dport 7080 -j ACCEPT
+# Reverse with: sudo iptables -D nixos-fw -i docker0 -p tcp --dport 7080 -j ACCEPT
+```
+
+Durable fix: add `docker0` to
+`networking.firewall.trustedInterfaces` in the system config. Or
+better: switch the trial to Docker compose so the server isn't on
+the host at all.
 
 ## Cleanup
 

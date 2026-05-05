@@ -94,6 +94,29 @@ systemctl is-active coder 2>/dev/null
 test -f "$HOME/.config/coderv2/url" && cat "$HOME/.config/coderv2/url"
 ```
 
+**Reuse an existing `coder` binary** if `coder --version` already
+works. Skip Phase 2 entirely unless the user asked to reinstall or
+the existing version is older than the deployment they want
+(production should pin a recent release; trial is fine on whatever
+is there).
+
+**Isolate the trial from an existing login.** If
+`~/.config/coderv2/url` exists and points somewhere the user does
+NOT want to overwrite (e.g. `https://dev.coder.com`, an internal
+team deployment), set isolated config and cache directories for
+every `coder` and `coder server` invocation in this session:
+
+```sh
+export CODER_CONFIG_DIR="$HOME/.config/coderv2-trial"
+export CODER_CACHE_DIRECTORY="$HOME/.cache/coder-trial"
+mkdir -p "$CODER_CONFIG_DIR" "$CODER_CACHE_DIRECTORY"
+```
+
+Ask the user before touching the existing config; the default is
+to isolate. Without isolation the trial's `coder login` overwrites
+the stored URL and session, kicking the user out of their real
+deployment.
+
 #### Pick the deployment mode
 
 Decide between **trial** and **production** before anything else.
@@ -130,9 +153,10 @@ production.
   2. The built-in `*.try.coder.app` tunnel (publicly exposed; only if
      the user explicitly asked for a public URL with no DNS work).
 - **First-user credentials**: email, username, optional full name, and
-  a password. Generate a strong one if the user has no preference
-  (`openssl rand -base64 18 | tr -d '/+=' | head -c 24`). Print it
-  once at the end of Phase 8.
+  a password. Generate a strong one if the user has no preference;
+  see `references/first-user.md#generating-a-password` for a portable
+  recipe (`openssl` is not on every host). Print it once at the end
+  of Phase 8.
 - **Starter template**: default to `docker` for compose / standalone
   with Docker; `kubernetes` for Helm.
 - **Create a workspace?**: default yes for trial.
@@ -230,8 +254,25 @@ Verify with `coder --version`. Exit criterion: the binary runs.
 #### Trial path
 
 ```sh
-coder server --access-url "$ACCESS_URL" --http-address 127.0.0.1:7080
+coder server --access-url "$ACCESS_URL" --http-address "$BIND_ADDR"
 ```
+
+Pick `$BIND_ADDR`:
+
+- `127.0.0.1:7080` if no workspace will be built on this host (e.g.
+  user only wants the dashboard up).
+- `0.0.0.0:7080` if you plan to push the `docker` starter and create
+  a workspace. The workspace agent runs inside a container that
+  reaches the server via `host.docker.internal`, which resolves to
+  the host's docker bridge IP, not the container's loopback. A
+  host-loopback bind is unreachable. See
+  `references/troubleshooting.md#workspace-agent-cant-reach-the-server`.
+
+On NixOS specifically, the `nixos-fw` chain drops new connections on
+the docker bridge by default; even `0.0.0.0` won't be reachable
+until you allow the bridge. If the host is NixOS, prefer Docker
+compose (the server runs inside the docker network and skips the
+host firewall entirely). See `references/troubleshooting.md#nixos-firewall-blocks-docker-bridge`.
 
 Always pass `--access-url` explicitly, with the value the user picked
 in Phase 1. Never omit the flag and rely on the implicit
@@ -416,7 +457,7 @@ with required parameters lives in `references/templates.md`.
 ```sh
 TEMPLATE_DIR="$(mktemp -d)/$TEMPLATE_NAME"
 coder templates init --id "$TEMPLATE_ID" "$TEMPLATE_DIR"
-( cd "$TEMPLATE_DIR" && coder templates push "$TEMPLATE_NAME" --yes )
+coder templates push "$TEMPLATE_NAME" -d "$TEMPLATE_DIR" --yes
 coder templates list
 ```
 
@@ -424,7 +465,7 @@ When an external provisioner is in use (Phase 5), tag the push so
 the matching daemon picks the build up:
 
 ```sh
-coder templates push "$TEMPLATE_NAME" \
+coder templates push "$TEMPLATE_NAME" -d "$TEMPLATE_DIR" \
   --provisioner-tag environment=cloud --yes
 ```
 
@@ -460,14 +501,68 @@ If the user wants a workspace right away:
 coder create "$WORKSPACE_NAME" --template "$TEMPLATE_NAME" --yes
 ```
 
-Pass parameters with repeated `--parameter "name=value"` if the
-template has any required ones. Show them with `coder templates show
-$TEMPLATE_NAME` before guessing.
+Pass parameters with repeated `--parameter "name=value"`. Templates
+evolve; never assume a starter has no required parameters. Discover
+them before calling `coder create`:
 
-For the `docker` starter, no parameters are required. For
-`kubernetes`, the namespace must already exist (the template assumes
-the server has RBAC to create pods in it).
+```sh
+coder templates pull "$TEMPLATE_NAME" "$(mktemp -d)/$TEMPLATE_NAME"
+# Then read main.tf for `data "coder_parameter"` blocks.
+```
 
+`coder create` without `--parameter` for a required parameter
+blocks on stdin and hangs the headless flow. List, map, and object
+parameters need a JSON value:
+
+```sh
+coder create "$WORKSPACE_NAME" \
+  --template "$TEMPLATE_NAME" \
+  --parameter 'jetbrains_ides=[]' \
+  --parameter 'cpu=2' \
+  --yes
+```
+
+For `kubernetes`, the namespace must already exist (the template
+assumes the server has RBAC to create pods in it).
+
+**Wait for the agent to be ready, not just for the build to
+succeed.** A build with `latest_build.job.status=succeeded` and
+`latest_build.status=running` only means the workspace's
+infrastructure stood up. The user-facing question is whether the
+*agent* is connected and finished its startup script. Without this
+check, the skill reports success but `coder ssh` /
+`coder open` still fail because the agent is in `connecting`.
+
+Poll the agent lifecycle until it reaches `ready` (or fail loudly
+on `start_error` / `start_timeout`):
+
+```sh
+WS_DEADLINE=$(( $(date +%s) + 300 ))
+while :; do
+  STATE=$(coder list -o json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for w in d:
+  if w["name"] != "'"$WORKSPACE_NAME"'": continue
+  for r in (w["latest_build"].get("resources") or []):
+    for a in (r.get("agents") or []):
+      print(a["lifecycle_state"]); raise SystemExit
+print("no-agent")
+')
+  case "$STATE" in
+    ready)                     echo "agent ready"; break ;;
+    start_error|start_timeout) echo "agent failed: $STATE" >&2; exit 1 ;;
+  esac
+  [ "$(date +%s)" -gt "$WS_DEADLINE" ] && { echo "agent did not reach ready in 5min (last=$STATE)" >&2; exit 1; }
+  sleep 5
+done
+```
+
+If the agent stalls in `connecting`, see
+`references/troubleshooting.md#workspace-agent-cant-reach-the-server`.
+The usual cause on a single-host Linux setup is the trial-path
+binding to `127.0.0.1`, which is unreachable from the workspace
+container.
 ### Phase 8: Summarize
 
 Print one block at the end, clearly delimited. Pick the `Stop:`

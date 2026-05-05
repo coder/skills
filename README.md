@@ -24,11 +24,12 @@ plugins from it:
 ```
 
 After installing, the skill activates automatically when you ask
-Claude to install or set up Coder. You can also invoke it directly:
+Claude to install or set up Coder. Skills don't expose a slash
+command; just say what you want ("set up Coder locally", "deploy
+Coder behind HTTPS") and the skill activates from its description.
 
-```text
-/setup-coder
-```
+If the install doesn't take effect immediately, run
+`/reload-plugins` and try again.
 
 For local development, point at a checkout instead of the GitHub
 slug:

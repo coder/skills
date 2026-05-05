@@ -41,7 +41,8 @@ After Claude finishes:
   template.
 - `GET /api/v2/workspaces` includes a workspace named `demo` with
   `latest_build.job.status = succeeded`, `latest_build.status =
-  running`, and `transition = start`.
+  running`, `transition = start`, and the agent's `lifecycle_state
+  = ready`.
 
 ## Sandbox
 

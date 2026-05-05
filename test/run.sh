@@ -157,11 +157,17 @@ print('ok: template', '$TEMPLATE_NAME')
 
 # 5) demo workspace.
 #
-# Coder reports two related fields:
-#   - latest_build.status:     workspace runtime status (running/stopped/failed/...)
-#   - latest_build.job.status: build job status (pending/running/succeeded/failed/...)
-# A successfully built and started workspace has job.status=succeeded AND
-# status=running. Poll up to 5 minutes for both.
+# Coder reports three related fields the test must check together:
+#   - latest_build.status:                       workspace runtime status (running/stopped/...)
+#   - latest_build.job.status:                   build job status (pending/running/succeeded/...)
+#   - latest_build.resources[].agents[].lifecycle_state: per-agent script status
+# A succeeded build with status=running only means the infrastructure
+# came up. The agent must also reach lifecycle_state=ready before the
+# workspace is actually usable. The user-visible failure mode if we
+# only check build state is "workspace running but the dashboard
+# spinner never resolves" -- exactly the failure caused by binding the
+# trial server to 127.0.0.1 (host.docker.internal in the workspace
+# container can't reach host loopback).
 WS_DEADLINE=$(( $(date +%s) + 300 ))
 while :; do
   WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
@@ -173,22 +179,27 @@ ws = [w for w in d.get('workspaces', []) if w['name'] == '$WORKSPACE_NAME']
 if not ws:
     print('missing'); raise SystemExit(0)
 b = ws[0]['latest_build']
-print(f\"{b['job']['status']},{b['status']},{b['transition']}\")
+lifecycles = []
+for r in (b.get('resources') or []):
+    for a in (r.get('agents') or []):
+        lifecycles.append(a.get('lifecycle_state', 'unknown'))
+lc = lifecycles[0] if lifecycles else 'no-agent'
+print(f\"{b['job']['status']},{b['status']},{b['transition']},{lc}\")
 ")"
   case "$WS_STATE" in
-    succeeded,running,start)
-      echo "ok: workspace $WORKSPACE_NAME job=succeeded status=running transition=start"
+    succeeded,running,start,ready)
+      echo "ok: workspace $WORKSPACE_NAME job=succeeded status=running transition=start agent=ready"
       break
       ;;
-    failed,*|canceled,*|*,failed,*|*,canceled,*)
-      fail "workspace build $WS_STATE"
+    failed,*|canceled,*|*,failed,*|*,canceled,*|*,*,*,start_error|*,*,*,start_timeout)
+      fail "workspace failed: $WS_STATE"
       ;;
     missing)
       fail "no workspace named $WORKSPACE_NAME"
       ;;
   esac
   if [ "$(date +%s)" -gt "$WS_DEADLINE" ]; then
-    fail "workspace did not reach succeeded,running,start within 5 minutes (last=$WS_STATE)"
+    fail "workspace did not reach succeeded,running,start,ready within 5 minutes (last=$WS_STATE)"
   fi
   sleep 5
 done

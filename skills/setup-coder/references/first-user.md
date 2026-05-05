@@ -64,13 +64,24 @@ which won't work under headless / `claude -p`.
 
 ## Password handling
 
-If the user has no preferred password, generate one:
+### Generating a password
+
+If the user has no preferred password, generate one. Pick the first
+recipe that has a binary on `$PATH`; many slim images and NixOS
+bases ship without `openssl`:
 
 ```sh
-PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)"
+if command -v openssl >/dev/null 2>&1; then
+  PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)"
+elif command -v python3 >/dev/null 2>&1; then
+  PASSWORD="$(python3 -c 'import secrets, string; a = string.ascii_letters + string.digits; print("".join(secrets.choice(a) for _ in range(24)))')"
+else
+  # /dev/urandom + base64 is universal on Linux/macOS.
+  PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+fi
 ```
 
-Show it to the user once at the end of Phase 7. Don't write it to a
+Show it to the user once at the end of Phase 8. Don't write it to a
 file unless the user asked. If you must, use mode 0600 under
 `~/.config/coder-install/credentials` and tell the user.
 
