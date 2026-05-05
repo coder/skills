@@ -167,6 +167,13 @@ mutates the system. In production mode, also echo back the planned
 DNS records, env vars (without secret values), and ingress hostnames
 so the user can spot-check before the server starts.
 
+**Headless mode** (`claude -p`, no interactive shell): the user
+cannot answer a yes/no prompt. Treat the original prompt as the
+approval. If it doesn't include the required values (access URL,
+wildcard, TLS termination, OAuth client ID and secret, provisioner
+key), refuse with a one-line error listing what's missing rather
+than blocking on stdin.
+
 ### Phase 2: Install
 
 Always prefer the canonical install script. It already detects the
@@ -463,7 +470,10 @@ the server has RBAC to create pods in it).
 
 ### Phase 8: Summarize
 
-Print one block at the end, clearly delimited:
+Print one block at the end, clearly delimited. Pick the `Stop:`
+command from the install method below and substitute it before
+showing the block to the user, so they don't see a `kill` command
+when they ran `helm install`.
 
 ```text
 === Coder is ready ===
@@ -476,18 +486,23 @@ Template:        $TEMPLATE_NAME
 Workspace:       $WORKSPACE_NAME  (or: not created)
 External auth:   $EXTERNAL_AUTH_ID (or: not configured)
 Provisioner:     external @ $PROVISIONER_HOST (or: built-in)
-Server log:      $HOME/.coder-server.log
-Stop:            kill "$(cat ~/.coder-server.pid)"
+Server log:      $SERVER_LOG_PATH (or: managed by orchestrator)
+Stop:            <command for the install method, see below>
 ```
 
-Replace the `Stop:` line with the right command for the install
-method:
+`Stop:` command by install method:
 
-- nohup: `kill "$(cat ~/.coder-server.pid)"`
+- nohup (trial): `kill "$(cat ~/.coder-server.pid)"`
 - systemd: `sudo systemctl stop coder`
-- Docker compose: `docker compose down` (add `-v` only when the user
-  has explicitly asked to delete the database)
-- Helm: `helm uninstall coder -n coder`
+- Docker compose: `docker compose down` in the deployment directory
+  (add `-v` only when the user has explicitly asked to delete the
+  database).
+- Helm: `helm uninstall coder -n coder`.
+
+`Server log:` is `$HOME/.coder-server.log` only for the trial nohup
+path. For systemd use `journalctl -u coder`; for compose use
+`docker compose logs coder`; for Helm use
+`kubectl logs -n coder deploy/coder`. Substitute before showing.
 
 For production deploys, also remind the user to record:
 

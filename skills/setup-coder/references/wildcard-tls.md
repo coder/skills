@@ -84,6 +84,22 @@ separated list of PEMs if you want to serve multiple certs. The first
 PEM should be the leaf followed by intermediates concatenated (the
 standard `fullchain.pem` layout from certbot / cert-manager).
 
+The private key file must be readable only by the user that runs
+`coder server`. Lock it down before starting:
+
+```sh
+sudo install -m 0700 -d /etc/coder/tls
+sudo install -m 0600 -o coder -g coder /path/to/privkey.pem \
+  /etc/coder/tls/privkey.pem
+sudo install -m 0644 -o coder -g coder /path/to/fullchain.pem \
+  /etc/coder/tls/fullchain.pem
+```
+
+Adjust `coder:coder` to the actual user/group running the server
+(`root:root` if installed via the system package and started with
+systemd as root). World-readable key files are the most common
+self-inflicted leak in this path.
+
 To enforce HTTPS, set `CODER_REDIRECT_TO_ACCESS_URL=true` so plain HTTP
 hits get a 308 to the HTTPS URL.
 

@@ -77,9 +77,9 @@ coder provisioner start \
 ```
 
 Run it under systemd or a process supervisor; one process equals one
-concurrent build. To support N parallel builds, run N processes (or
-use `--instances N` on the same host; check `coder provisioner start
---help` for the current flag).
+concurrent build. To support N parallel builds, run N processes. The
+command has no built-in instance multiplexer; supervise N copies
+instead.
 
 ### Docker
 
@@ -131,17 +131,27 @@ coder:
       environment: cloud
 ```
 
-Install:
+Install. Capture the key from the `coder provisioner keys create`
+output into a file (or pipe stdin) so it doesn't land in shell
+history via `--from-literal`:
 
 ```sh
-kubectl create secret generic coder-provisioner-key \
+# After running `coder provisioner keys create ...`, paste the key
+# value when prompted; -s suppresses echo, /dev/stdin keeps it off
+# the command line.
+umask 0077
+read -r -s -p 'provisioner key: ' KEY; echo
+printf '%s' "$KEY" | kubectl create secret generic coder-provisioner-key \
   --namespace coder \
-  --from-literal=key="$KEY"
+  --from-file=key=/dev/stdin
+unset KEY
 helm install coder-provisioner coder-v2/coder-provisioner \
   --namespace coder \
   --values provisioner-values.yaml
 ```
 
+Don't write the key to a temp file; if you must, `umask 0077` and
+`shred -u` it after `kubectl create secret` succeeds.
 ## Verify
 
 From any client logged in as an admin:

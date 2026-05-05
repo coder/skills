@@ -57,12 +57,29 @@ be retrieved later, only rotated.
 The `CODER_EXTERNAL_AUTH_<N>_*` env vars are indexed; start at 0.
 Multiple providers use 0, 1, 2, etc., in order.
 
+**Capture the client secret without leaking it.** Don't paste the
+secret into a shell command directly; that puts it in shell history
+and process listings. Read it from stdin into the env var, then
+immediately move it into the deployment manifest:
+
 ```sh
 export CODER_EXTERNAL_AUTH_0_ID=primary-github
 export CODER_EXTERNAL_AUTH_0_TYPE=github
 export CODER_EXTERNAL_AUTH_0_CLIENT_ID=<the client id>
-export CODER_EXTERNAL_AUTH_0_CLIENT_SECRET=<the client secret>
+read -r -s -p 'CODER_EXTERNAL_AUTH_0_CLIENT_SECRET: ' \
+  CODER_EXTERNAL_AUTH_0_CLIENT_SECRET; echo
+export CODER_EXTERNAL_AUTH_0_CLIENT_SECRET
 ```
+
+The `read -r -s` pattern matches the one used for
+`CODER_FIRST_USER_PASSWORD` in the bootstrap phase. Confirm receipt
+with `[set]` rather than echoing the value back.
+
+For Helm, write the secret into a Kubernetes Secret directly
+(`kubectl create secret generic coder-external-auth --from-file=
+client-secret=/dev/stdin <<<"$CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"`)
+and reference it with `valueFrom.secretKeyRef`. Don't put the secret
+in a values.yaml file that lands in git.
 
 Optional but useful:
 
