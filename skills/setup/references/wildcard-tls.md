@@ -11,24 +11,26 @@ Coder has *two* URLs in its config:
   authenticates, and where workspace agents dial back. Required.
 - `CODER_WILDCARD_ACCESS_URL`: the hostname pattern Coder uses to
   serve `coder_app` resources (port-forwarded apps, web terminals,
-  embedded VS Code, etc.) on per-workspace subdomains. Optional but
-  expected for production.
+  embedded VS Code, etc.) on per-workspace subdomains. Optional;
+  enable it when the user wants subdomain app routing.
 
-Without the wildcard, Coder falls back to path-based proxying for
-apps. That breaks anything that assumes it's served at the root path
-(most modern web apps), forces extra cookie scoping, and makes
-embedded ports unreachable from terminals like SSH `-L` tunnels. The
-docs at <https://coder.com/docs/admin/networking#wildcard-access-url>
+Without the wildcard, Coder serves apps on path-based routes. Most
+apps work that way. The ones that break are anything that hardcodes
+a root path, scopes cookies to a specific host, or relies on
+`coder port-forward` URLs (which are subdomain-shaped). If the user
+needs those, set the wildcard; otherwise leave it off.
+The docs at <https://coder.com/docs/admin/networking#wildcard-access-url>
 go deeper.
 
 ## DNS
 
-You need two records, both pointing at the same address (the load
-balancer, ingress, reverse proxy, or VM):
+If you set a wildcard URL, you need two records, both pointing at
+the same address (the load balancer, ingress, reverse proxy, or VM).
+If you didn't, just the apex.
 
 ```text
 coder.example.com.        300  IN  A  203.0.113.10
-*.coder.example.com.      300  IN  A  203.0.113.10
+*.coder.example.com.      300  IN  A  203.0.113.10   # only with wildcard
 ```
 
 Use AAAA records for IPv6. CNAME is fine for the apex on providers

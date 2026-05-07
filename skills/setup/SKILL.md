@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup, optionally registers external auth and an external provisioner, pushes a starter template, and (optionally) creates a first workspace.
+description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both trial setups (auto-tunnel, no TLS) and production setups (real domain, TLS, optional wildcard URL, optional custom external auth, optional external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup (or hands off to GitHub sign-in on fresh deployments), pushes a starter template, and (optionally) creates a first workspace.
 ---
 
 # setup
@@ -130,7 +130,6 @@ provisioner topology) follows from the mode.
 | Real domain named (`coder.example.com`)               | production |
 | HTTPS / TLS / Let's Encrypt / cert-manager mentioned  | production |
 | "For my team", "for the company", "staging"           | production |
-| GitHub / GitLab / OIDC mentioned                      | production |
 | Cloud workspaces with shared cloud account            | production |
 
 When the signals conflict, ask. Don't guess.
@@ -139,6 +138,38 @@ When the signals conflict, ask. Don't guess.
 path. Read it before continuing into Phase 2 if you've picked
 production.
 
+#### Pick the first-user auth method
+
+Fresh deployments auto-enable a default "Continue with GitHub"
+button on the dashboard, backed by Coder's own OAuth App. The first
+user to sign in (any path, any method) is auto-promoted to Owner.
+That means you have two ways to bootstrap:
+
+- **GitHub** (recommended for solo and small-team trials). The user
+  opens the access URL once, clicks "Continue with GitHub", and is
+  the Owner of the deployment. No password to record. Skill skips
+  the `coder login --first-user-*` flow entirely.
+- **Username and password.** Fully scripted; no browser involved.
+  Skill generates a strong password, writes the credentials to
+  `~/.config/coder-install/credentials` (mode 0600) so the user has
+  a recovery path, and uses `coder login --first-user-*`.
+
+Ask the user once: "Sign in with GitHub, or generate a username and
+password?". Default to GitHub when the access URL will be
+browser-reachable (the auto-tunnel and `localhost` from the same
+machine both qualify); fall back to username/password if the user
+says no, asks for fully scripted setup, or runs in headless
+(`claude -p`) mode where there's no human to click the button.
+
+For the username/password path, prefill the email from git config
+if present:
+
+```sh
+EMAIL_DEFAULT="$(git config --global --get user.email 2>/dev/null || true)"
+```
+
+Ask the user to confirm or override.
+
 #### Things to ask, by mode
 
 **Trial mode** (defaults that are usually fine):
@@ -146,17 +177,16 @@ production.
 - **Install target**: standalone host, Docker compose, or Kubernetes
   via Helm. Default to compose if Docker is available; otherwise
   standalone.
-- **Access URL**: pick exactly one. Never proceed without an explicit
-  choice.
-  1. `http://localhost:<port>` (recommended for trial; workspaces
-     reachable only from the host).
-  2. The built-in `*.try.coder.app` tunnel (publicly exposed; only if
-     the user explicitly asked for a public URL with no DNS work).
-- **First-user credentials**: email, username, optional full name, and
-  a password. Generate a strong one if the user has no preference;
-  see `references/first-user.md#generating-a-password` for a portable
-  recipe (`openssl` is not on every host). Print it once at the end
-  of Phase 8.
+- **Access URL**: do **not** ask. The skill defaults to letting
+  `coder server` open its built-in `*.try.coder.app` tunnel
+  automatically, which works on any host with internet egress and
+  sidesteps host-firewall and docker-bridge issues. Fall back to
+  `http://localhost:7080` only if the tunnel can't initialize
+  (offline host, blocked egress). See Phase 3 for the detection
+  recipe. The trial is publicly reachable on a non-guessable
+  subdomain protected by the admin's auth; that's an intentional
+  tradeoff in exchange for one-shot reliability.
+- **First-user auth**: see above.
 - **Starter template**: default to `docker` for compose / standalone
   with Docker; `kubernetes` for Helm.
 - **Create a workspace?**: default yes for trial.
@@ -166,20 +196,29 @@ Minimum input set:
 
 - Real HTTPS access URL (`https://coder.example.com`); never the
   tunnel.
-- Wildcard URL (`*.coder.example.com`). Both names must resolve
-  before starting.
 - TLS termination point: at the Coder server (PEM files) or at a
   reverse proxy / ingress. Pick one.
 - Managed PostgreSQL connection string. Built-in PG is trial-only.
-- External-auth fields if GitHub / GitLab / etc. is in scope: client
-  ID, secret, chosen `CODER_EXTERNAL_AUTH_0_ID`.
-- Scoped provisioner key (`coder provisioner keys create`) if cloud
-  workspaces are in scope.
-- First-user credentials. Don't randomize the password in production;
-  let the user pick.
-- Starter template matching the cloud (`aws-linux`, `kubernetes`,
-  etc.). Helm on Kubernetes is the default install target for
-  production; standalone or compose only fits a single-VM deploy.
+- First-user auth method. The default GitHub provider works in
+  production too; only ask for username/password if GitHub login
+  doesn't fit the org.
+- Starter template matching the deployment's Docker / Kubernetes /
+  cloud target. See `references/templates.md`.
+
+Ask **only if relevant** (don't surface these as required):
+
+- **Wildcard URL** (`*.coder.example.com`). Needed for subdomain
+  app routing, which is what backs `coder port-forward` and many
+  embedded `coder_app` ports. If the user doesn't need
+  port-forwarding or hits no apps that break under path-based
+  proxying, omit it. Most teams want it; ask once.
+- **Custom external auth provider** (GHES, GitLab, a non-default
+  GitHub OAuth App). The default github.com provider is on
+  automatically; only register a custom one if the user has a
+  reason. Ask after the deployment is up, not in Phase 1.
+- **External provisioner**. Required only when cloud workspaces
+  must run with isolated credentials. Ask if the chosen template
+  needs cloud creds; otherwise skip.
 
 Full decision matrix and order of operations:
 `references/production.md`. Per-topic detail in `wildcard-tls.md`,
@@ -192,11 +231,13 @@ DNS records, env vars (without secret values), and ingress hostnames
 so the user can spot-check before the server starts.
 
 **Headless mode** (`claude -p`, no interactive shell): the user
-cannot answer a yes/no prompt. Treat the original prompt as the
-approval. If it doesn't include the required values (access URL,
-wildcard, TLS termination, OAuth client ID and secret, provisioner
-key), refuse with a one-line error listing what's missing rather
-than blocking on stdin.
+cannot answer a yes/no prompt and cannot click a browser button.
+Treat the original prompt as the approval. For first-user auth,
+default to username/password (browser GitHub flow needs a human).
+If the prompt doesn't include the required values for production
+(access URL, TLS termination, optional wildcard / OAuth /
+provisioner key), refuse with a one-line error listing what's
+missing rather than blocking on stdin.
 
 ### Phase 2: Install
 
@@ -253,72 +294,86 @@ Verify with `coder --version`. Exit criterion: the binary runs.
 
 #### Trial path
 
+Default: let `coder server` open its built-in tunnel. The tunnel is
+the most-reliable trial path because it routes around host-firewall
+and docker-bridge issues that bite local-only binds. Don't pass
+`--access-url`; the server will pick a `*.try.coder.app` URL and
+print it to stderr.
+
 ```sh
-coder server --access-url "$ACCESS_URL" --http-address "$BIND_ADDR"
+nohup coder server \
+  > "$HOME/.coder-server.log" 2>&1 &
+echo $! > "$HOME/.coder-server.pid"
 ```
 
-Pick `$BIND_ADDR`:
+Watch the log for either:
 
-- `127.0.0.1:7080` if no workspace will be built on this host (e.g.
-  user only wants the dashboard up).
-- `0.0.0.0:7080` if you plan to push the `docker` starter and create
-  a workspace. The workspace agent runs inside a container that
-  reaches the server via `host.docker.internal`, which resolves to
-  the host's docker bridge IP, not the container's loopback. A
-  host-loopback bind is unreachable. See
-  `references/troubleshooting.md#workspace-agent-cant-reach-the-server`.
-
-On NixOS specifically, the `nixos-fw` chain drops new connections on
-the docker bridge by default; even `0.0.0.0` won't be reachable
-until you allow the bridge. If the host is NixOS, prefer Docker
-compose (the server runs inside the docker network and skips the
-host firewall entirely). See `references/troubleshooting.md#nixos-firewall-blocks-docker-bridge`.
-
-Always pass `--access-url` explicitly, with the value the user picked
-in Phase 1. Never omit the flag and rely on the implicit
-`*.try.coder.app` tunnel; that tunnel is publicly reachable and the
-user must opt into it knowingly.
-
-Run the server in the background and capture logs to a file. Three
-options, pick the first that fits:
-
-- **systemd**: the install script can register a `coder` service.
-  Use it on production-like Linux hosts.
-- **nohup**: minimal, works everywhere.
-  ```sh
-  nohup coder server --access-url "$ACCESS_URL" \
-    > "$HOME/.coder-server.log" 2>&1 &
-  echo $! > "$HOME/.coder-server.pid"
-  ```
-- **tmux**: when the user wants a live log they can attach to.
-  ```sh
-  tmux new -d -s coder "coder server --access-url '$ACCESS_URL'"
-  ```
-
-Wait for readiness by polling `$ACCESS_URL/healthz` until it returns
-200. Time out after 60 seconds and surface the server log if it
-doesn't become ready.
+- A `https://<id>.try.coder.app` access URL appearing within ~30
+  seconds. The tunnel is up; record the URL and continue to Phase 4.
+- `create tunnel: ...` errors (no internet egress, blocked DNS,
+  `*.try.coder.app` not reachable). Stop the server and retry with
+  the localhost fallback below.
 
 ```sh
+# Wait for either readiness or a hard tunnel error.
 for _ in $(seq 1 60); do
-  if curl -fsS "$ACCESS_URL/healthz" >/dev/null 2>&1; then
+  ACCESS_URL="$(grep -oE 'https://[a-z0-9-]+\.try\.coder\.app' \
+    "$HOME/.coder-server.log" | head -1)"
+  if [ -n "$ACCESS_URL" ] && \
+     curl -fsS "$ACCESS_URL/healthz" >/dev/null 2>&1; then
+    break
+  fi
+  if grep -q 'create tunnel' "$HOME/.coder-server.log"; then
+    ACCESS_URL=""
     break
   fi
   sleep 1
 done
 ```
 
+**Localhost fallback** (no internet egress, or user explicitly asked
+for local-only):
+
+```sh
+kill "$(cat "$HOME/.coder-server.pid")" 2>/dev/null || true
+ACCESS_URL="http://localhost:7080"
+nohup coder server \
+  --access-url "$ACCESS_URL" \
+  --http-address 0.0.0.0:7080 \
+  > "$HOME/.coder-server.log" 2>&1 &
+echo $! > "$HOME/.coder-server.pid"
+for _ in $(seq 1 60); do
+  curl -fsS "$ACCESS_URL/healthz" >/dev/null 2>&1 && break
+  sleep 1
+done
+```
+
+Bind to `0.0.0.0:7080`, not `127.0.0.1:7080`. The `docker` workspace
+agent reaches the server via `host.docker.internal` (the docker
+bridge IP), so a host-loopback bind is unreachable from inside the
+workspace container. On NixOS the `nixos-fw` chain may still drop
+the SYN; see
+`references/troubleshooting.md#nixos-firewall-blocks-docker-bridge`.
+
+Other supervisors instead of `nohup` (pick whichever fits the host):
+
+- **systemd**: `install.sh` registers a `coder` unit if it ran with
+  sudo. Drop env into `/etc/coder.d/coder.env` and
+  `sudo systemctl restart coder`.
+- **tmux**: `tmux new -d -s coder "coder server"` for a live log
+  the user can attach to.
+
 #### Production path
 
-The server is configured by env, not flags. Set the access URL,
-wildcard URL, TLS, and database connection on the deployment manifest
-(Helm values or compose `environment:` block), not as CLI args.
+The server is configured by env, not flags. Set the access URL
+(plus optional wildcard, TLS, and database) on the deployment
+manifest (Helm values, compose `environment:` block, or systemd
+environment file), not as CLI args.
 
 Minimum env for a Helm or compose deploy:
 
 ```sh
 CODER_ACCESS_URL=https://coder.example.com
-CODER_WILDCARD_ACCESS_URL=*.coder.example.com
 CODER_PG_CONNECTION_URL=postgres://coder:${PASSWORD}@db.internal:5432/coder?sslmode=require
 # TLS at the server (omit if a proxy / ingress terminates):
 CODER_TLS_ENABLE=true
@@ -328,8 +383,21 @@ CODER_TLS_KEY_FILE=/etc/coder/tls/privkey.pem
 CODER_REDIRECT_TO_ACCESS_URL=true
 ```
 
-Roll it out (`helm upgrade`, `docker compose up -d`) and wait for
-readiness against the public URL:
+If Phase 1 collected a wildcard URL, also set:
+
+```sh
+CODER_WILDCARD_ACCESS_URL=*.coder.example.com
+```
+
+The wildcard is optional; without it Coder serves apps on path-based
+routes instead of subdomains. Most apps work either way; some break
+under path routing (anything that hardcodes the root path or scopes
+cookies to a specific host). See `references/wildcard-tls.md` for
+the tradeoff matrix.
+
+Roll it out (`helm upgrade`, `docker compose up -d`,
+`sudo systemctl restart coder`) and wait for readiness against the
+public URL:
 
 ```sh
 for _ in $(seq 1 120); do
@@ -340,21 +408,60 @@ for _ in $(seq 1 120); do
 done
 ```
 
-Verify the wildcard resolves end-to-end:
+If the wildcard is configured, verify it resolves end-to-end:
 
 ```sh
 curl -fsS https://app-test.coder.example.com/healthz
 ```
 
-Both must return 200 before continuing. Full env-var matrix and
-common failures: `references/wildcard-tls.md`.
+Full env-var matrix and common failures: `references/wildcard-tls.md`.
 
 ### Phase 4: Bootstrap the first admin user
 
-This is the step that makes "no UI" possible. Use `coder login` with
-`--first-user-*` flags, **including `--first-user-trial=false`**: if
-neither the flag nor `CODER_FIRST_USER_TRIAL` is set, the CLI prompts
-on stdin and the headless flow hangs.
+Fresh deployments auto-promote whoever signs in first to Owner. The
+two paths produce the same end state; pick the one that matches the
+auth method chosen in Phase 1.
+
+#### GitHub path
+
+Fresh deployments auto-enable a default GitHub OAuth app on the
+dashboard. The user opens the access URL once, clicks "Continue
+with GitHub", lands back in Coder as Owner. No password to record,
+no `coder login --first-user-*` invocation.
+
+```text
+Open the dashboard:
+
+  $ACCESS_URL
+
+Click "Continue with GitHub", authorize the OAuth app, and return
+to Coder. You'll be the Owner of this deployment.
+```
+
+While the user does that, link the local CLI to the deployment so
+the rest of the skill can run admin commands:
+
+```sh
+coder login "$ACCESS_URL"
+```
+
+This opens a browser to the same access URL; the user signs in once
+and the CLI captures the session token. Verify:
+
+```sh
+coder whoami
+coder users list
+```
+
+`users list` shows exactly one row with `OWNER` in the roles column,
+the email or login from GitHub.
+
+#### Username and password path
+
+Use `coder login` with `--first-user-*` flags, **including
+`--first-user-trial=false`**: if neither the flag nor
+`CODER_FIRST_USER_TRIAL` is set, the CLI prompts on stdin and the
+headless flow hangs.
 
 Pass the password through the env, not the command line, so it
 doesn't land in shell history or process listings:
@@ -373,14 +480,23 @@ All four of `--first-user-email`, `--first-user-username`,
 `--first-user-full-name`, and `--first-user-trial` are also accepted
 as `CODER_FIRST_USER_*` env vars; use whichever is more convenient.
 
-After this:
+The password has no recovery path. Persist it to a mode-0600 file at
+`~/.config/coder-install/credentials` immediately after `coder login`
+succeeds, so the user has a way back in:
 
-- The user exists, has the Owner role, and is in the default
-  organization.
-- The session token is in the OS keyring on macOS / Windows or in
-  `~/.config/coderv2/session` on Linux.
-- The server URL is in `~/.config/coderv2/url`.
-- Subsequent `coder` commands authenticate automatically.
+```sh
+umask 0077
+mkdir -p "$HOME/.config/coder-install"
+printf 'url=%s\nusername=%s\nemail=%s\npassword=%s\n' \
+  "$ACCESS_URL" "$USERNAME" "$EMAIL" "$PASSWORD" \
+  > "$HOME/.config/coder-install/credentials"
+echo "saved to $HOME/.config/coder-install/credentials (mode 600)"
+```
+
+This differs from the GitHub path: GitHub-bootstrapped deployments
+don't need a credentials file because the user owns the recovery
+path via GitHub. Username/password deployments do, because the
+password exists nowhere else.
 
 Verify:
 
@@ -389,27 +505,40 @@ coder whoami
 coder users list
 ```
 
-`whoami` returns the bootstrapped user. `users list` shows exactly one
-row with `OWNER` in the roles column.
+`whoami` returns the bootstrapped user. `users list` shows exactly
+one row with `OWNER` in the roles column.
 
-For trial-license setup, persistent tokens, and the full failure list,
-read `references/first-user.md` before running this phase.
+For trial-license setup, persistent tokens, and the full failure
+list, read `references/first-user.md`.
+
 
 ### Phase 5: External services (production only)
 
 Skip this phase entirely in trial mode.
 
-In production, do these in order. Each is independent of the others
-but template push (Phase 6) often depends on both.
+In production, both items below are **optional**. The default
+github.com external auth provider is already on for fresh
+deployments, and the in-server provisioner runs Docker templates
+fine. Touch this phase only when the user names a reason.
 
-#### Register external auth (usually GitHub)
+#### Custom external auth provider (only if needed)
 
-Lets templates `coder_external_auth` against GitHub so workspaces
-can clone private repos without baked-in PATs. Full walkthrough:
-`references/external-auth-github.md`. Summary:
+The default `github.com` provider works out of the box for fresh
+deployments and covers the "workspaces clone private GitHub repos"
+case without any setup. Register a *custom* provider only when:
+
+- The user runs GitHub Enterprise Server (GHES). The default points
+  at github.com only.
+- The user wants GitLab, Bitbucket, Gitea, Azure DevOps, or another
+  non-GitHub provider.
+- The user has a corporate-owned OAuth App they prefer over Coder's
+  default (e.g. for audit visibility, restricted scopes).
+
+When one of those applies, follow `references/external-auth-github.md`.
+The short version:
 
 1. Pick a provider ID (`primary-github`).
-2. Register a GitHub OAuth App with callback URL
+2. Register an OAuth App with callback URL
    `https://coder.example.com/external-auth/<id>/callback`.
 3. Set on the server:
    ```sh
@@ -417,16 +546,29 @@ can clone private repos without baked-in PATs. Full walkthrough:
    CODER_EXTERNAL_AUTH_0_TYPE=github
    CODER_EXTERNAL_AUTH_0_CLIENT_ID=<id>
    CODER_EXTERNAL_AUTH_0_CLIENT_SECRET=<secret>
-   CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false
    ```
 4. Roll out the deployment.
 5. Verify with `GET /api/v2/external-auth`.
 
-#### Run an external provisioner
+When a *custom* GitHub provider is configured, the default github.com
+provider auto-suppresses (the server picks the explicit one over its
+built-in default; no need to set
+`CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false`).
 
-Keeps cloud credentials off the Coder server and lets you scale
-parallel builds. Full walkthrough: `references/external-provisioner.md`.
-Summary:
+#### External provisioner (only if needed)
+
+The in-server provisioner is fine for Docker / Kubernetes templates
+that run against the same host or cluster the server runs on.
+Register a separate provisioner only when:
+
+- Cloud workspaces (AWS / GCP / Azure) need credentials the Coder
+  server should not see.
+- Build concurrency is a bottleneck (each daemon = one concurrent
+  build).
+- Build environments need network isolation from the control plane.
+
+Full walkthrough: `references/external-provisioner.md`. Short
+version:
 
 1. Generate a scoped key:
    ```sh
@@ -445,9 +587,6 @@ Summary:
 4. Tag templates pushed in Phase 6 with the same `environment=cloud`
    so the in-server provisioner doesn't claim cloud builds.
 
-If the deployment only ever runs Docker templates against the Coder
-host's own Docker socket, skip this; the in-server provisioner is
-fine.
 
 ### Phase 6: Push a starter template
 
@@ -565,23 +704,35 @@ binding to `127.0.0.1`, which is unreachable from the workspace
 container.
 ### Phase 8: Summarize
 
-Print one block at the end, clearly delimited. Pick the `Stop:`
-command from the install method below and substitute it before
-showing the block to the user, so they don't see a `kill` command
-when they ran `helm install`.
+Print one block at the end, clearly delimited. Substitute the
+placeholders for the values from this run; don't print fields that
+don't apply.
+
+For the **GitHub auth path**:
 
 ```text
 === Coder is ready ===
 Access URL:      $ACCESS_URL
-Wildcard URL:    $WILDCARD_URL    (production only)
-Username:        $USERNAME
-Email:           $EMAIL
-Password:        $PASSWORD        (record now; no recovery path)
+Wildcard URL:    $WILDCARD_URL    (production, if configured)
+Sign in with:    GitHub (open the access URL and click "Continue with GitHub")
 Template:        $TEMPLATE_NAME
 Workspace:       $WORKSPACE_NAME  (or: not created)
-External auth:   $EXTERNAL_AUTH_ID (or: not configured)
-Provisioner:     external @ $PROVISIONER_HOST (or: built-in)
-Server log:      $SERVER_LOG_PATH (or: managed by orchestrator)
+Server log:      <command for the install method, see below>
+Stop:            <command for the install method, see below>
+```
+
+For the **username/password path**:
+
+```text
+=== Coder is ready ===
+Access URL:      $ACCESS_URL
+Wildcard URL:    $WILDCARD_URL    (production, if configured)
+Username:        $USERNAME
+Email:           $EMAIL
+Password:        $PASSWORD        (saved to ~/.config/coder-install/credentials)
+Template:        $TEMPLATE_NAME
+Workspace:       $WORKSPACE_NAME  (or: not created)
+Server log:      <command for the install method, see below>
 Stop:            <command for the install method, see below>
 ```
 
@@ -594,36 +745,24 @@ Stop:            <command for the install method, see below>
   database).
 - Helm: `helm uninstall coder -n coder`.
 
-`Server log:` is `$HOME/.coder-server.log` only for the trial nohup
-path. For systemd use `journalctl -u coder`; for compose use
-`docker compose logs coder`; for Helm use
-`kubectl logs -n coder deploy/coder`. Substitute before showing.
+`Server log:` command by install method:
 
-For production deploys, also remind the user to record:
+- nohup (trial): `tail -f $HOME/.coder-server.log`
+- systemd: `journalctl -u coder -f`
+- Docker compose: `docker compose logs -f coder`
+- Helm: `kubectl logs -n coder deploy/coder -f`
 
-- The GitHub OAuth App's client ID / callback URL (rotating the
-  secret later requires both).
-- The external provisioner key fingerprint.
-- The TLS cert and DNS records.
+For production deploys with custom integrations, also remind the
+user to record (these don't have a "show me again" command; back
+them up out of band):
 
-These don't have a "show me again" command; back them up out of
-band.
+- A custom GitHub OAuth App's client ID and callback URL, if one
+  was registered in Phase 5. The default github.com provider needs
+  no recording; it's managed by Coder.
+- The external provisioner key fingerprint, if one was generated.
+- The TLS cert paths and DNS records.
 
-**Password handling.** Never write the password to a file unless the
-user explicitly asks ("save the password", "write it to disk", etc.).
-When they do, use a secure mode-0600 write that doesn't race:
 
-```sh
-umask 0077
-mkdir -p "$HOME/.config/coder-install"
-printf 'url=%s\nusername=%s\npassword=%s\n' \
-  "$ACCESS_URL" "$USERNAME" "$PASSWORD" \
-  > "$HOME/.config/coder-install/credentials"
-echo "saved to $HOME/.config/coder-install/credentials (mode 600)"
-```
-
-The password has no recovery path now that the UI bootstrap is
-closed. Print it once and let the user record it.
 
 ## Anti-patterns
 
@@ -647,17 +786,20 @@ closed. Print it once and let the user record it.
   `bash install.sh ...` so they can inspect the script first.
 - Do not edit `/etc/systemd/system/coder.service` by hand. Use the
   installer's unit and override with a drop-in at
-  `/etc/systemd/system/coder.service.d/override.conf`.
-- Do not write the admin password to disk silently. Print it once at
-  the end of Phase 8 and only persist it after the user opts in. When
-  you do persist it, use the `umask 0077` recipe in Phase 8.
+  `/etc/systemd/system/coder.service.d/override.conf`. systemd is
+  itself a fine production supervisor; what makes a deployment
+  production-ready is managed Postgres, real TLS, and a real access
+  URL, not the choice of process manager.
+- Do not write the username/password admin credentials to disk
+  silently for the GitHub auth path; that path doesn't need a
+  credentials file because the user owns recovery via GitHub. Do
+  write them when the user picks username/password (Phase 4) so
+  they have a recovery path.
 - Do not echo cloud credentials, OAuth client secrets, provisioner
   keys, or the admin password back to the user. Confirm receipt with
   `[set]` or a redacted form.
 - Do not start a trial license unless the user asked. Default to
   `--first-user-trial=false`.
-- Do not omit `--access-url`. The implicit `*.try.coder.app` tunnel
-  exposes the deployment publicly and must be an explicit choice.
 - Do not skip the `/healthz` readiness probe. A successful `coder
   server` exit doesn't mean the API is up.
 - Do not run `coder server` in a foreground that ties up the chat.
@@ -669,14 +811,14 @@ closed. Print it once and let the user record it.
   `--variable`, `terraform.tfvars`, or any artifact that ends up in
   the audit log. Set them on the server (or the provisioner's)
   environment instead.
-- Do not run a production server without `CODER_WILDCARD_ACCESS_URL`
-  if the user expects `coder_app` ports, embedded VS Code, or web
-  terminals to work. The skill's Phase 1 collects the wildcard URL
-  for production mode; don't skip it.
-- Do not register a custom GitHub external auth provider while
-  `CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE` is left at the
-  default `true`. The dashboard ends up with two "Continue with
-  GitHub" buttons.
+- Do not disable telemetry on the user's behalf. It defaults to on,
+  and Coder strips PII before sending. The user can opt out with
+  `CODER_TELEMETRY_ENABLE=false` if they need to; don't ask them and
+  don't decide for them.
+- Do not register a custom GitHub external auth provider for a fresh
+  deployment unless the user has a reason (GHES, non-default OAuth
+  App). The default github.com provider is on automatically and
+  covers the common case.
 
 ## References
 

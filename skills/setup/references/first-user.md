@@ -1,8 +1,24 @@
 # First-User Bootstrap
 
-The first time a Coder server runs, no users exist. The web UI's
-setup page exists for this case; this skill's whole point is to do it
-from the CLI.
+The first time a Coder server runs, no users exist. Two ways to
+bootstrap the first Owner without opening the dashboard's setup
+flow:
+
+1. **Sign in with GitHub.** Fresh deployments auto-enable a default
+   github.com OAuth provider. Open the access URL, click "Continue
+   with GitHub". The first user to sign in (by any method) is
+   auto-promoted to Owner; that's the only thing the dashboard's
+   setup flow does that the GitHub sign-in doesn't already cover.
+   Skill chooses this when the access URL is browser-reachable
+   (auto-tunnel, or `localhost` from the same machine) and the user
+   picks GitHub in Phase 1.
+2. **Username and password.** Drives `coder login` with
+   `--first-user-*` flags below. Skill chooses this in headless
+   mode (`claude -p`), when the user explicitly asks, or when the
+   access URL isn't browser-reachable from the user's box.
+
+This file documents the username/password command set. The GitHub
+path needs no command beyond "open the URL and click the button".
 
 ## The canonical command
 

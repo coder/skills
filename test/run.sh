@@ -63,7 +63,14 @@ Constraints:
 
 - DO NOT run a host install. Use Docker compose.
 - DO NOT pkill coder. Ever.
-- Bind the Coder server on $ACCESS_URL.
+- DO NOT use the auto-tunnel. This test runs in a sandbox with no
+  human and no browser; the auto-tunnel access URL is unreachable
+  to the verifier. Bind the Coder server on $ACCESS_URL exactly,
+  with the container listening on 0.0.0.0:7080 and the host port
+  mapped to ${PORT}.
+- DO NOT use the GitHub first-user auth path. There is no human to
+  click "Continue with GitHub". Use the username/password path with
+  the credentials below and pass --first-user-trial=false.
 - Work entirely under $TESTDIR.
 
 Setup parameters:
@@ -74,6 +81,7 @@ Setup parameters:
 - Admin name:    $FULL_NAME
 - Admin password: $PASSWORD
 - Trial:         false
+- First-user auth: username/password (NOT GitHub)
 - Starter template: $TEMPLATE_NAME
 - Create one workspace named "$WORKSPACE_NAME" from the $TEMPLATE_NAME template.
 

@@ -5,12 +5,14 @@ that survives a reboot, serves a real domain, and lets multiple users
 log in. Use it in addition to the rest of the skill, not as a
 replacement for it.
 
-The trial path (localhost / tunnel, no TLS, no external auth) covers
-demos and "kick the tires" usage. Switch to this path when any of:
+The trial path (auto-tunnel or localhost, no TLS, no extra
+configuration) covers demos and "kick the tires" usage. Switch to
+this path when any of:
 
 - The user names a real domain (`coder.example.com`, `dev.acme.io`).
 - The user mentions HTTPS, Let's Encrypt, ingress, or "TLS".
-- The user wants a team to log in via GitHub, GitLab, OIDC.
+- The user wants a team to log in via a non-default GitHub provider,
+  GitLab, GHES, or OIDC.
 - The user needs cloud workspaces (AWS / GCP / Azure) with credentials
   the Coder server itself should not see.
 - The user says "production", "staging", or "for the team".
@@ -24,64 +26,87 @@ through Phases 2 and beyond.
 Do these in order. Each step has a clear exit criterion. Do not start
 the next step until the current one is verifiable.
 
-1. **Plan the access URL and the wildcard URL.**
+1. **Plan the access URL.**
    - `CODER_ACCESS_URL=https://coder.example.com` is the server.
-   - `CODER_WILDCARD_ACCESS_URL=*.coder.example.com` is the per-app
-     hostname pattern that lets `coder_app` ports work. Without it,
-     `coder port-forward` and embedded apps fall back to path-based
-     proxying which breaks anything that assumes a root path.
-   - The wildcard is a separate DNS record (`*.coder.example.com A ...`)
-     and a separate TLS certificate SAN. Provision both before
-     starting the server.
+   - **Wildcard URL is optional**, not required. Set
+     `CODER_WILDCARD_ACCESS_URL=*.coder.example.com` only when the
+     user wants subdomain app routing (which backs `coder
+     port-forward` and the cleanest behavior for embedded `coder_app`
+     ports). Without it, Coder serves apps on path-based routes;
+     most apps work that way, some break (anything that hardcodes a
+     root path or scopes cookies to a specific host). Ask once;
+     don't gate the deployment on it.
    - Details: `wildcard-tls.md`.
 
 2. **Provision DNS and TLS.**
    - One A or AAAA record for the apex (`coder.example.com`).
-   - One wildcard A or AAAA record (`*.coder.example.com`) pointing
-     to the same address.
-   - One TLS certificate covering both. ACME (cert-manager,
-     Caddy, traefik) is the simplest path; bring your own PEM works
-     too. See `wildcard-tls.md` for the exact env vars and the
-     terminator-vs-server tradeoff.
+   - If using the wildcard, one wildcard A or AAAA record
+     (`*.coder.example.com`) pointing to the same address.
+   - One TLS certificate covering the names you provisioned. ACME
+     (cert-manager, Caddy, traefik) is the simplest path; bring your
+     own PEM works too. See `wildcard-tls.md` for the exact env vars
+     and the terminator-vs-server tradeoff.
 
 3. **Stand up the server with production env.**
-   - Use Helm or Docker compose. Don't run `coder server` directly on a
-     production host; the install script does not configure systemd
-     hardening, log rotation, or a separate database.
-   - Set `CODER_ACCESS_URL`, `CODER_WILDCARD_ACCESS_URL`, and the TLS
-     env vars from `wildcard-tls.md`.
+   - Pick a supervisor that suits the host: Helm on Kubernetes,
+     Docker compose, or systemd on a single VM. systemd is fine for
+     production; what makes a deployment production-ready is managed
+     Postgres, real TLS, and a real access URL, not the choice of
+     process manager. The install script registers a systemd unit
+     when run on a supported distro; drop env into
+     `/etc/coder.d/coder.env` and `sudo systemctl restart coder`.
+   - Set `CODER_ACCESS_URL` and the TLS env vars from
+     `wildcard-tls.md`. Set `CODER_WILDCARD_ACCESS_URL` only if you
+     decided to in step 1.
    - Use a managed PostgreSQL (RDS, Cloud SQL, managed PG operator).
-     The built-in `coder.db` is fine for trials only.
+     The built-in PG is fine for trials only.
 
-4. **Bootstrap the admin user** (Phase 4 of the skill, unchanged).
-   - `coder login --first-user-*` against the public access URL.
+4. **Bootstrap the admin user** (Phase 4 of the skill).
+   - **GitHub path** (default for fresh deployments): the dashboard
+     auto-shows "Continue with GitHub". The first user to sign in is
+     auto-promoted to Owner.
+   - **Username/password path**: `coder login --first-user-*`
+     against the public access URL.
 
-5. **Register external auth (optional but usually desired).**
-   - GitHub is the most common; details and exact env vars in
-     `external-auth-github.md`.
-   - This is what makes `coder_external_auth` blocks in templates
-     work, so workspaces can clone private repos without committing
-     PATs.
+5. **Register a custom external auth provider** (optional, only if
+   needed).
+   - The default github.com provider is on by default for fresh
+     deployments and covers the "workspaces clone private GitHub
+     repos" case. Skip this step unless the user runs GHES, wants
+     GitLab/Bitbucket/etc., or has a corporate-owned OAuth App they
+     prefer over Coder's default.
+   - Details and exact env vars in `external-auth-github.md`.
 
-6. **Run an external provisioner (recommended for cloud templates).**
-   - Keeps cloud credentials off the Coder server.
-   - Lets you run the server without a Docker socket / cluster
-     credentials mounted.
-   - Details: `external-provisioner.md`. Skip this step only if all
-     templates run against local Docker on the server itself.
+6. **Run an external provisioner** (optional, only if needed).
+   - Required when cloud workspaces (AWS / GCP / Azure) need
+     credentials the Coder server should not see, or when build
+     concurrency / network isolation matters.
+   - The in-server provisioner is fine for Docker / Kubernetes
+     templates that run against the same host or cluster the server
+     runs on.
+   - Details: `external-provisioner.md`.
 
-7. **Push the template** (Phase 5 of the skill).
-   - When using an external provisioner, tag both the provisioner and
-     the template (`environment=cloud` is a common pair) so the
+7. **Push the template** (Phase 6 of the skill).
+   - When using an external provisioner, tag both the provisioner
+     and the template (`environment=cloud` is a common pair) so the
      in-server provisioner doesn't pick the job up.
 
-8. **Create one workspace** (Phase 6 of the skill).
-   - Verify it builds and reaches `latest_build.status=running`.
+8. **Create one workspace** (Phase 7 of the skill).
+   - Verify it builds and the agent reaches `lifecycle_state=ready`.
 
-9. **Summarize** (Phase 7 of the skill, extended).
-   - Print the access URL, login URL, GitHub OAuth callback URL, and
-     the provisioner PSK / scoped-key hash so the user can recover
-     each later.
+9. **Summarize** (Phase 8 of the skill).
+   - Print the access URL, the auth method (GitHub button vs saved
+     credentials), and any custom integrations registered (custom
+     OAuth App callback, provisioner key fingerprint, TLS cert
+     paths). The user backs these up out of band.
+
+## Telemetry
+
+Coder telemetry is on by default and strips PII before sending. The
+skill **does not** disable it on the user's behalf and does not ask
+them. If the user explicitly says they need to opt out, they can set
+`CODER_TELEMETRY_ENABLE=false` in the deployment env. Do not surface
+this option proactively.
 
 ## What this path does *not* cover
 
@@ -93,8 +118,9 @@ they ask:
 - **Workspace proxies.** Regional dataplanes for users far from the
   control plane. <https://coder.com/docs/admin/networking/workspace-proxies>
 - **OIDC / SAML platform login.** The user logs into Coder itself via
-  Okta / Azure AD / Google. This skill only covers external auth (the
-  per-workspace, per-template "log in to GitHub" flow).
+  Okta / Azure AD / Google. This skill covers GitHub-via-OAuth (the
+  default for fresh deployments) and external auth (the per-template
+  "log in to GitHub" flow), not enterprise SSO.
   <https://coder.com/docs/admin/users/oidc-auth>
 - **Backups, restore, disaster recovery.** Use your managed PG
   vendor's snapshot story.
@@ -106,18 +132,18 @@ they ask:
 
 ## Deployment-mode decision matrix
 
-| Concern                                  | Trial path                       | Production path                                       |
-|------------------------------------------|----------------------------------|-------------------------------------------------------|
-| Access URL                               | `http://localhost:7080`          | `https://coder.example.com`                           |
-| Wildcard URL                             | omitted                          | `*.coder.example.com`                                 |
-| TLS                                      | none                             | required, terminate at server or proxy                |
-| Database                                 | built-in (dqlite/sqlite)         | managed PostgreSQL                                    |
-| Server execution                         | `coder server` foreground/nohup  | Helm or compose with restart policy                   |
-| External auth                            | omit                             | usually GitHub via OAuth app                          |
-| Cloud creds                              | on the server (small blast)      | on a separate provisioner host                        |
-| Templates                                | `docker` starter                 | `aws-linux` / `kubernetes` / customer-authored        |
-| Workspace count                          | 1                                | many; expect concurrent builds                        |
-| Backup story                             | none                             | managed PG snapshots                                  |
+| Concern                                  | Trial path                                  | Production path                                       |
+|------------------------------------------|---------------------------------------------|-------------------------------------------------------|
+| Access URL                               | auto-tunnel `*.try.coder.app` (default)     | `https://coder.example.com`                           |
+| Wildcard URL                             | auto-tunnel suffix                          | optional; set when subdomain app routing is wanted    |
+| TLS                                      | tunnel-managed                              | required, terminate at server or proxy                |
+| Database                                 | built-in (dqlite/sqlite)                    | managed PostgreSQL                                    |
+| Server execution                         | `coder server` nohup or compose             | Helm, compose, or systemd with restart policy         |
+| First-user auth                          | GitHub default (no setup) or username/pass  | GitHub default or username/pass; custom OAuth optional|
+| Cloud creds                              | on the server (small blast radius)          | on a separate provisioner host (recommended)          |
+| Templates                                | `docker` starter                            | `aws-linux` / `kubernetes` / customer-authored        |
+| Workspace count                          | 1                                           | many; expect concurrent builds                        |
+| Backup story                             | none                                        | managed PG snapshots                                  |
 
 ## Confirmation gate
 

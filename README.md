@@ -11,7 +11,7 @@ distributes one or more skills targeted at Coder operators and users.
 
 | Skill                                                | What it does                                                                                                                                                                                                                                                          |
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`setup`](skills/setup/SKILL.md) (`/coder:setup`) | End-to-end install and first-run setup for a Coder deployment without using the web UI. Handles trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Wraps `install.sh`, drives `coder login --first-user-*` for non-interactive admin bootstrap, pushes a starter template, and (optionally) creates a first workspace. |
+| [`setup`](skills/setup/SKILL.md) (`/coder:setup`) | End-to-end install and first-run setup for a Coder deployment without using the web UI. Handles trial setups (auto-tunnel, no TLS) and production setups (real domain, TLS, optional wildcard, optional custom external auth, optional external provisioner). Wraps `install.sh`, hands off to GitHub sign-in by default on fresh deployments, falls back to `coder login --first-user-*` for fully scripted setups, pushes a starter template, and (optionally) creates a first workspace. |
 
 ## Install
 

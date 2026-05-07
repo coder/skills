@@ -10,6 +10,28 @@ references the auth provider with `data "coder_external_auth"`, Coder
 performs the OAuth dance on the user's behalf and exposes the
 resulting token to the workspace's environment.
 
+## Default github.com provider (no setup)
+
+Fresh deployments auto-enable a default github.com external auth
+provider, backed by Coder's own OAuth App. It covers the common
+case: workspaces cloning private github.com repos via
+`data "coder_external_auth" { id = "github" }` (or any matching
+`type = "github"`).
+
+Follow this file's setup only when the default doesn't fit:
+
+- **GitHub Enterprise Server (GHES).** The default points at
+  github.com only.
+- **A non-default OAuth App** the user prefers (corporate-owned,
+  for audit visibility, restricted scopes).
+- **GitLab, Bitbucket, Gitea, Azure DevOps, JFrog Artifactory.** The
+  same indexed env-var pattern works for all of them; per-provider
+  fields are documented at
+  <https://coder.com/docs/admin/external-auth>.
+
+When a custom GitHub provider is configured, the default github.com
+provider auto-suppresses; Coder picks the explicit one.
+
 ## Prerequisites
 
 - A working `CODER_ACCESS_URL` (HTTPS) you can reach from GitHub's
@@ -105,18 +127,14 @@ export CODER_EXTERNAL_AUTH_0_REGEX="github\\.acme\\.internal"
 Restart the server (Helm `helm upgrade`, compose `docker compose up -d`)
 so the env reaches the running process.
 
-## Disable the default GitHub provider
+## Default vs custom provider
 
-When you register your own `github`-typed provider, **disable Coder's
-built-in default GitHub login** so the dashboard doesn't show two
-"Continue with GitHub" buttons:
-
-```sh
-export CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false
-```
-
-Default is `true`. Leave it on only if you're not registering your own
-GitHub provider.
+When you register your own `github`-typed provider, the default
+github.com provider auto-suppresses on fresh deployments; you don't
+need to set `CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false`
+to avoid duplicate "Continue with GitHub" buttons. Set the env var
+to `false` only when you want the default off without registering a
+replacement (rare).
 
 ## Verify
 
@@ -168,8 +186,12 @@ automatically when it expires.
 - **"403 Bad credentials"** during a workspace clone. The OAuth App's
   client secret was rotated and the running deployment still has the
   old value. Restart the server after updating the env.
-- **Two "Continue with GitHub" buttons in the UI.** You forgot
-  `CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false`.
+- **Two "Continue with GitHub" buttons in the UI.** A custom
+  `github`-typed provider was registered on a deployment that's not
+  considered "fresh" (the auto-suppress only triggers for new
+  deployments). Set
+  `CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE=false`
+  explicitly to drop the default.
 - **`access_token` is empty in templates.** The user hasn't
   authorized the provider yet. Workspace builds prompt the user once;
   re-run the build after authorization.
