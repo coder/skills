@@ -201,16 +201,94 @@ possible interview answered (familiarity, mode, infrastructure,
 sign-in, dev environment) so Phases 2 onward have everything
 they need.
 
-**Ask all five core questions in a single message.** Real users
-report that an agent asks only the first two and then guesses
-the rest, which silently turns the install into a Docker /
-email / no-workspace deployment without consent. One message
-with five clearly numbered questions is dramatically more
-reliable than five sequential turns. Wait for the user's reply,
-parse the answers, then do everything else without asking
-again.
+**Ask all five core questions up front using `AskUserQuestion`.**
+`AskUserQuestion` is the built-in Claude Code tool (v2.0.21+)
+for structured multiple-choice prompts. Compared to plain text,
+it renders as a real picker the user clicks through, captures
+structured answers, and prevents the failure mode where the
+agent asks two questions in chat and then silently guesses the
+rest. **Use it; do not paste the questions as a chat message.**
 
-The five questions, verbatim:
+`AskUserQuestion` allows 1 to 4 questions per call with 2 to 4
+options each (plus an automatic "Other" free-text option). The
+five Phase 1 questions therefore go in two calls: four in the
+first, one in the second.
+
+**Call 1.** Four questions: familiarity, deployment mode,
+infrastructure, sign-in.
+
+```json
+{
+  "questions": [
+    {
+      "question": "Have you used Coder before?",
+      "header": "Familiarity",
+      "multiSelect": false,
+      "options": [
+        {"label": "First time", "description": "Never used Coder; explain concepts as we go."},
+        {"label": "Used it before", "description": "Skip the explanations; use Coder terms directly."}
+      ]
+    },
+    {
+      "question": "Are you trying Coder out, or setting it up for your team long-term?",
+      "header": "Deployment mode",
+      "multiSelect": false,
+      "options": [
+        {"label": "Just trying it out", "description": "Quick-start on this machine; auto-tunnel URL."},
+        {"label": "For my team", "description": "Production: real domain, TLS, optional Postgres / OIDC."}
+      ]
+    },
+    {
+      "question": "Where do you want Coder to run?",
+      "header": "Infrastructure",
+      "multiSelect": false,
+      "options": [
+        {"label": "Docker on this machine", "description": "Easiest if Docker is installed."},
+        {"label": "Kubernetes / Helm", "description": "Against a cluster you can reach with kubectl."},
+        {"label": "Directly on this machine", "description": "The binary, with systemd."},
+        {"label": "Something else", "description": "Rancher, OpenShift, AWS / GCP / Azure Marketplace, air-gapped."}
+      ]
+    },
+    {
+      "question": "How do you want to sign in as the admin?",
+      "header": "Sign-in",
+      "multiSelect": false,
+      "options": [
+        {"label": "GitHub", "description": "I'll show you a short URL and a code; works from any phone."},
+        {"label": "Email and password", "description": "I'll generate a strong password and save it locally."}
+      ]
+    }
+  ]
+}
+```
+
+**Call 2.** One question: dev environment.
+
+```json
+{
+  "questions": [
+    {
+      "question": "Want me to set up a starter dev environment and build the first one?",
+      "header": "Dev environment",
+      "multiSelect": false,
+      "options": [
+        {"label": "Yes, match my infrastructure", "description": "Linux container if Docker, Linux pod if Kubernetes."},
+        {"label": "Yes, a different kind", "description": "Tell me which (cloud VM, your own Terraform, etc.)."},
+        {"label": "Push the starter, but don't build a workspace yet", "description": "I'll do the first build myself."},
+        {"label": "Skip this entirely", "description": "Just install Coder; I'll add a template later."}
+      ]
+    }
+  ]
+}
+```
+
+Wait for each call's reply before sending the next; do not
+batch the JSON yourself or paste it back as text.
+
+**If the runner does not expose `AskUserQuestion`** (some
+headless / `claude -p` setups, or runners that disabled it),
+fall back to a single chat message with the five questions
+verbatim, numbered, in this exact order:
 
 > Before I start, five quick questions:
 >
@@ -226,15 +304,19 @@ The five questions, verbatim:
 >      password for you?
 >   5. After Coder is up, do you want me to push a starter dev
 >      environment and build the first one for you (default
->      yes)? If you have a specific kind in mind (Linux
->      container in Docker, Kubernetes pod, cloud VM, your own
->      Terraform), say so; otherwise I'll match what you picked
->      in question 3.
+>      yes)? If you have a specific kind in mind, say so;
+>      otherwise I'll match what you picked in question 3.
 
-If the user gives short answers ("new", "trying out", "docker",
-"github", "yes"), accept them. If they answer fewer than five,
-ask only for the missing ones; do not re-ask the ones they
-answered.
+Detect availability by attempting `AskUserQuestion`; if the
+runner reports it as unknown / unavailable, drop to the chat
+fallback for the rest of Phase 1. Do not invent your own
+text-only prompts when the tool is available; users have
+reported the chat-message version of this interview as
+significantly worse than the structured picker.
+
+If the user gives short or partial answers, accept them and
+fill in defaults from the mapping tables below; never re-ask
+an already-answered question.
 
 After the answers come in:
 
@@ -265,9 +347,10 @@ Hard guards run with the actions they protect, not in this phase:
 
 #### Read the audience (question 1)
 
-This is question 1 in the batched-five message above; it is not
-a separate ask turn. Use the answer to set the audience mode
-for the rest of the install. Map the answer:
+This is question 1 in the `AskUserQuestion` call (or the
+batched-five chat fallback); it is not a separate ask turn.
+Use the answer to set the audience mode for the rest of the
+install. Map the answer:
 
 | What the user said                                              | Mode      |
 |-----------------------------------------------------------------|-----------|
@@ -306,8 +389,9 @@ they said earlier.
 
 #### Pick the deployment mode (question 2)
 
-This is question 2 in the batched-five message. The answer
-drives almost every later choice. Map it:
+This is question 2 in the `AskUserQuestion` call (or the
+batched-five chat fallback). The answer drives almost every
+later choice. Map it:
 
 | What the user said                                    | Mode        |
 |-------------------------------------------------------|-------------|
@@ -329,9 +413,9 @@ often than this skill does.
 
 #### Pick the infrastructure (question 3)
 
-This is question 3 in the batched-five message. Never silently
-default to Docker; the answer must come from the user.
-Map it:
+This is question 3 in the `AskUserQuestion` call (or the
+batched-five chat fallback). Never silently default to Docker;
+the answer must come from the user. Map it:
 
 | User says                            | Install path                                              |
 |--------------------------------------|-----------------------------------------------------------|
@@ -354,8 +438,8 @@ short sentence; don't lecture.
 
 #### Pick how the user will sign in (question 4)
 
-This is question 4 in the batched-five message. Two reasonable
-paths:
+This is question 4 in the `AskUserQuestion` call (or the
+batched-five chat fallback). Two reasonable paths:
 
 - **GitHub.** Drive GitHub's standard device-code flow over
   Coder's API. Print a short URL and an 8-character code; the
@@ -392,8 +476,9 @@ unless git doesn't have one.
 
 #### Pick the dev environment (question 5)
 
-This is question 5 in the batched-five message. Map the answer
-to a starter template and an initial workspace decision:
+This is question 5 in the `AskUserQuestion` call (or the
+batched-five chat fallback). Map the answer to a starter
+template and an initial workspace decision:
 
 | User says                                              | Template            | Build first workspace? |
 |--------------------------------------------------------|---------------------|-----------------------|
@@ -1180,13 +1265,22 @@ End the handoff with a one-line offer:
 - **Do not assume Docker.** Ask the infrastructure question.
   Don't silently default; even when Docker is installed, the
   user may want Kubernetes or a direct install.
+- **Do not ask the Phase 1 questions as plain chat text when
+  `AskUserQuestion` is available.** The structured picker is
+  the supported UX; chat-message fallbacks lose the click-to-
+  answer affordance, options look like prose the user has to
+  parse, and the agent is more likely to drop questions. Use
+  the two `AskUserQuestion` calls described in Phase 1 (four
+  questions, then one). Only fall back to chat text if the
+  runner reports the tool as unavailable.
 - **Do not collapse Phase 1 into a two-question interview.**
   The five core questions (familiarity, mode, infrastructure,
-  sign-in, dev environment) are non-negotiable. Real users have
-  reported agents asking only mode + sign-in and silently
+  sign-in, dev environment) are non-negotiable. Real users
+  have reported agents asking only mode + sign-in and silently
   guessing the rest, ending up with a Docker install and a
-  workspace they didn't know they were building. Send all five
-  in one batched message.
+  workspace they didn't know they were building. Use
+  `AskUserQuestion` and ship all five questions across the two
+  documented calls.
 - **Do not call `coder create` before reading the template's
   required parameters.** A blind `coder create` against a
   starter that has required list parameters (e.g.
