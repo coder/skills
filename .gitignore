@@ -6,3 +6,10 @@ node_modules/
 *.swp
 .vscode/
 .idea/
+
+# Scratch directories left behind by `npx skills add` smoke tests.
+.agents/
+.claude/
+.codex/
+.mux/
+skills-lock.json

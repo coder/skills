@@ -1,39 +1,58 @@
 # setup skill tests
 
-This skill is tested with [`claude -p`](https://docs.claude.com/en/docs/claude-code/headless)
-in non-interactive mode against a real Coder server provisioned via
-Docker compose. The test is one-shot end-to-end: install + bootstrap +
-template push + workspace create + verify.
+The skill ships with two end-to-end harnesses, one per major coding
+agent CLI. Both run the skill headlessly, spin a real Coder server in
+Docker, and verify the result via the Coder REST API.
 
-## Run the test
+| Harness                | Driver                                                              | What it exercises                                  |
+|------------------------|---------------------------------------------------------------------|----------------------------------------------------|
+| `./test/run.sh`        | [`claude -p`](https://docs.claude.com/en/docs/claude-code/headless) | Claude Code, plugin marketplace via `--plugin-dir` |
+| `./test/run-codex.sh`  | `codex exec`                                                        | Codex CLI, skill discovered under `$CODEX_HOME/skills` |
 
-Requirements:
+The skill itself is identical for both. The harnesses differ only in
+how the agent is launched and how the skill is exposed.
 
-- `claude` CLI (the [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code)).
+## Run
+
+Requirements (both harnesses):
+
 - Docker daemon reachable from the user (no `sudo`).
-- A free TCP port for the server. The script defaults to `17080`.
-- Anthropic credentials (`ANTHROPIC_API_KEY`, or AWS Bedrock / GCP
-  Vertex environment for `claude`).
+- A free TCP port for the server (`run.sh` defaults to `17080`,
+  `run-codex.sh` to `17081`).
+
+Per-harness extras:
+
+- `run.sh`: the [`claude` CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code)
+  on `PATH` and Anthropic credentials it can use.
+- `run-codex.sh`: the [`codex`
+  CLI](https://github.com/openai/codex) on `PATH` and a working
+  `~/.codex/config.toml` + `~/.codex/auth.json` (the harness copies
+  these into a sandbox so it doesn't touch the real ones).
 
 Run:
 
 ```sh
 ./test/run.sh
+./test/run-codex.sh
 ```
 
-The script:
+Each script:
 
 1. Spins a clean test directory under `$TMPDIR` (or `/tmp`).
-2. Invokes `claude -p` with `--plugin-dir` pointing at the marketplace
-   in this repo.
-3. Asks Claude to drive the `setup` skill.
-4. Independently verifies the server, admin user, template, and
+2. Drives the agent against the skill in this repo.
+3. Independently verifies the server, admin user, template, and
    workspace via the Coder REST API.
-5. Prints `PASS` or `FAIL`.
+4. Prints `PASS` or `FAIL`.
+
+Override the port or timeout via env vars:
+
+```sh
+CODER_TEST_PORT=18080 CODER_TEST_TIMEOUT=1800 ./test/run.sh
+```
 
 ## What's verified
 
-After Claude finishes:
+After the agent finishes:
 
 - `GET /healthz` returns `OK`.
 - `GET /api/v2/users` returns exactly one user (`admin`, owner role).
@@ -46,14 +65,13 @@ After Claude finishes:
 
 ## Sandbox
 
-The harness sandboxes `$HOME` and `$XDG_CONFIG_HOME` to a temporary
-directory under `$TMPDIR`. Anything the skill writes to `~/...`
-lands in the sandbox, not the user's real home, so a misbehaving run
-cannot clobber `~/.config/coderv2`, `~/.bash_history`, or other host
-state. The Docker daemon is shared with the host (the compose recipe
-binds the daemon socket), so containers and images created by the
-test persist on the host's docker daemon and are cleaned up by the
-harness's `cleanup` trap.
+Both harnesses sandbox `$HOME` and `$XDG_CONFIG_HOME` (and Codex's
+`$CODEX_HOME`) under `$TMPDIR`. Anything the skill writes lands in
+the sandbox, so a misbehaving run cannot clobber `~/.config/coderv2`,
+`~/.bash_history`, or other host state. The Docker daemon is shared
+with the host (the compose recipe binds the daemon socket), so
+containers and images created by the test persist on the host's
+docker daemon and are cleaned up by the `cleanup` trap.
 
 ## Why Docker compose
 
@@ -66,11 +84,11 @@ holds by leaving Docker compose as the only viable path.
 
 ## Production path
 
-`run.sh` covers the quick-start path only. The production-mode workflow
-(real domain, wildcard URL, TLS, GitHub external auth, external
-provisioner) needs DNS, an OAuth App, and a TLS issuer that the
-harness can't provide on its own without a kind cluster + self-
-signed CA + stub OAuth server. That harness is not in the repo
+The harnesses cover the quick-start path only. The production-mode
+workflow (real domain, wildcard URL, TLS, GitHub external auth,
+external provisioner) needs DNS, an OAuth App, and a TLS issuer that
+the harnesses can't provide on their own without a kind cluster +
+self-signed CA + stub OAuth server. That harness is not in the repo
 yet; the production path is currently exercised manually.
 
 Manual verification recipe (against a real cluster you control):

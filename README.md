@@ -1,48 +1,60 @@
 # coder/skills
 
-Skills for installing, configuring, and operating
-[Coder](https://github.com/coder/coder).
+Agent skills for installing, configuring, and operating
+[Coder](https://github.com/coder/coder) from the command line.
 
-This repository is a [Claude Code plugin
-marketplace](https://docs.claude.com/en/docs/claude-code/plugins) that
-distributes one or more skills targeted at Coder operators and users.
-
-## Skills
-
-| Skill                                                | What it does                                                                                                                                                                                                                                                          |
-|------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`setup`](skills/setup/SKILL.md) | End-to-end install and first-run setup for a Coder deployment without using the web UI. Asks the user for deployment mode, infrastructure (Docker / Kubernetes / direct), and sign-in method, drives the GitHub device-code flow on fresh deployments to sign the first admin in without a browser, falls back to a generated email and password for fully scripted setups, pushes a starter template, optionally builds the first workspace, and hands off with a short plain-English guide. Defers per-topic configuration (OIDC, custom OAuth, GitLab, external provisioners, wildcard URL, TLS, template authoring) to <https://coder.com/docs/llms.txt>. |
+| Skill                            | What it does                                                                                                                                                                                                                                                                |
+|----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`setup`](skills/setup/SKILL.md) | End-to-end install and first-run setup of a Coder deployment without the web UI: install, sign in the first admin (GitHub device flow or generated email/password), push a starter template, optionally build the first workspace. Covers Docker, Kubernetes, and direct host installs. |
 
 ## Install
 
-In Claude Code, add the marketplace once, then install one or more
-plugins from it:
+### `npx skills` (recommended)
+
+The [`skills`](https://www.npmjs.com/package/skills) CLI works with
+every major coding-agent CLI. It resolves a marketplace, picks a
+skill, and drops it under each agent's discovery directory:
+
+```sh
+# project-local: drops the skill in ./.claude/skills, ./.agents/skills, ...
+npx skills add coder/skills@setup
+
+# user-global: drops it in ~/.claude/skills, ~/.codex/skills, ~/.cursor/skills, ...
+npx skills add coder/skills@setup --global
+
+# install only for a specific agent
+npx skills add coder/skills@setup --agent codex
+npx skills add coder/skills@setup --agent claude-code
+npx skills add coder/skills@setup --agent cursor
+```
+
+Once installed, the skill activates automatically when you ask the
+agent to install or set up Coder. There is no slash command; just
+say what you want ("set up Coder locally", "deploy Coder behind
+HTTPS", "stand up Coder on Kubernetes") and the agent picks the
+skill from its description.
+
+### Claude Code (native plugin marketplace)
+
+Claude Code can also load this repo as a [plugin
+marketplace](https://docs.claude.com/en/docs/claude-code/plugins)
+directly:
 
 ```text
 /plugin marketplace add coder/skills
 /plugin install coder@coder-skills
 ```
 
-After installing, the skill activates automatically when you ask
-Claude to install or set up Coder. Skills don't expose a slash
-command; just say what you want ("set up Coder locally", "deploy
-Coder behind HTTPS") and the skill activates from its description.
-
 If the install doesn't take effect immediately, run
 `/reload-plugins` and try again.
 
-For local development, point at a checkout instead of the GitHub
-slug:
+For local development, point the marketplace at a checkout:
 
 ```text
 /plugin marketplace add /path/to/skills
 ```
 
-## Run a skill headlessly
-
-Skills work in `claude -p` (non-interactive mode) the same way they
-work in the interactive REPL. For local development, point at a
-checkout with `--plugin-dir`:
+In headless mode (`claude -p`), use `--plugin-dir` instead:
 
 ```sh
 claude -p \
@@ -55,15 +67,33 @@ claude -p \
 
 `--permission-mode bypassPermissions` is required because the skill
 runs `curl | sh`, starts background processes, and writes config
-files. Only use it on a sandboxed host. The bundled
-[`test/run.sh`](test/run.sh) harness wraps this for you and verifies
+files. Only use it on a sandboxed host.
+
+### Codex (native plugin marketplace)
+
+The Codex CLI has its own plugin marketplace command. Same source:
+
+```sh
+codex plugin marketplace add coder/skills
+```
+
+Codex auto-discovers any skill placed under `$CODEX_HOME/skills`
+(default `~/.codex/skills`), so the `npx skills add coder/skills
+--agent codex` path above works without any extra step.
+
+## Run a skill headlessly
+
+Two test harnesses ship with the repo, one per CLI. Both spin a
+real Coder server in Docker, drive the skill end-to-end, and verify
 the result via the Coder REST API.
 
 ```sh
-./test/run.sh
+./test/run.sh           # Claude Code (claude -p)
+./test/run-codex.sh     # Codex (codex exec)
 ```
 
-See [`test/README.md`](test/README.md) for what the harness expects.
+See [`test/README.md`](test/README.md) for what each harness
+expects and how to point them at a different port or template.
 
 ## Develop a new skill
 
@@ -78,19 +108,27 @@ description: One sentence on what it does and exactly when to use it.
 ---
 ```
 
-Anthropic's skill spec lives at
+Anthropic's skill spec is at
 <https://github.com/anthropics/skills/tree/main/spec>. Conventions
 this repo follows on top of that:
 
-- Keep `SKILL.md` lean (target 1500 to 2500 words). Push detailed
-  matrices, tables, and edge-case lists into `references/*.md`.
-- Reference files from `SKILL.md` with relative paths so the skill
-  works whether it's installed at the personal, project, or plugin
-  level.
-- Don't ship secrets, license keys, or auth tokens in any skill
+- **Keep `description` under 1024 characters.** Codex truncates the
+  description at that limit and drops the skill if the truncated
+  YAML is invalid. Claude tolerates longer descriptions but does
+  not benefit from them. Push activation triggers and exclusions
+  into a tight 1000-char block.
+- **Keep `SKILL.md` lean** (target 1500 to 2500 words). Push
+  detailed matrices, tables, and edge-case lists into
+  `references/*.md` and lazy-load them by trigger.
+- **Reference files from `SKILL.md` with relative paths** so the
+  skill works at the personal, project, or plugin level and across
+  agents.
+- **Don't ship secrets, license keys, or auth tokens** in any skill
   artifact. Skills are public.
-- New skills should ship with a smoke test under `test/` that runs
-  via `claude -p` and verifies the externally observable result.
+- **Add a smoke test under `test/`** that runs the skill headlessly
+  and verifies the externally observable result. The two existing
+  harnesses (`test/run.sh`, `test/run-codex.sh`) are good
+  templates.
 
 ## License
 
