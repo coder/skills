@@ -1,6 +1,37 @@
 ---
 name: setup
-description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Covers quick-start setups (one machine) and production setups (real domain, TLS, optional wildcard, optional custom OAuth, optional external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", or otherwise get a working Coder deployment with at least one workspace ready to go. Wraps the canonical install.sh, drives the GitHub device-code flow on fresh deployments to sign the first admin in without a browser on the install machine, falls back to a generated email and password for fully scripted setups, pushes a starter template, and (optionally) creates a first workspace. Defers per-topic configuration (OIDC, custom OAuth, external provisioners, wildcard URL, TLS strategy, template authoring) to https://coder.com/docs/ instead of duplicating it.
+description: |
+  Install and bootstrap a Coder (coder/coder) deployment end-to-end from
+  the CLI without using the web UI. Covers quick-start setups (one
+  machine, auto-tunnel URL) and production setups (real domain, TLS,
+  optional wildcard, optional custom OAuth, optional external
+  provisioner). Wraps install.sh, drives the GitHub device-code flow on
+  fresh deployments to sign the first admin in without a browser on the
+  install machine, falls back to a generated email and password for
+  fully scripted setups, pushes a starter template, and optionally
+  creates a first workspace. Defers per-topic configuration (OIDC,
+  custom OAuth, GitLab, external provisioners, wildcard URL, TLS
+  strategy, template authoring) to https://coder.com/docs/.
+
+  Activate this skill when the user says any of: "install Coder", "set
+  up Coder", "deploy Coder", "get me started with Coder", "bootstrap
+  Coder", "stand up Coder for my team", "run Coder on this machine",
+  "run Coder in Docker", "deploy Coder on Kubernetes / Helm / a
+  cluster", "Coder on AWS / GCP / Azure / DigitalOcean / a VM", "put
+  Coder behind HTTPS", "behind Caddy / nginx / cert-manager", "with a
+  wildcard domain", "with TLS / Let's Encrypt", "I don't want to touch
+  the UI", "do it from the terminal", "headless setup",
+  "non-interactive first-user setup", "create the first admin user
+  from the CLI", "push a starter template", "create my first
+  workspace". Also activate for the slash command `/coder:setup`.
+
+  Do NOT activate for upgrading an existing deployment, editing an
+  existing template, debugging an already-running server, configuring
+  OIDC / GitLab / custom OAuth on a deployment that's already up, or
+  any task that assumes Coder is already installed. Point the user at
+  https://coder.com/docs/install/upgrade.md, the relevant
+  https://coder.com/docs/admin/* page, or
+  https://coder.com/docs/support.md for those.
 ---
 
 # setup
@@ -40,27 +71,6 @@ recipe, the GitHub device-flow callback recipe, the workspace
 host guard). For everything else, point the user at the relevant
 `coder.com/docs/...md` page and let them or a follow-up agent
 configure it. That keeps the skill from drifting out of date.
-
-## When to use this skill
-
-Activate when the user says any of:
-
-- "Install Coder", "set up Coder", "deploy Coder", "get me started
-  with Coder", "bootstrap Coder", "stand up Coder for my team".
-- "Run Coder on this machine", "run Coder in Docker", "deploy Coder
-  on Kubernetes", "Coder on AWS / GCP / Azure / DigitalOcean".
-- "Put Coder behind HTTPS", "behind Caddy / nginx / cert-manager",
-  "with a wildcard domain", "with TLS / Let's Encrypt".
-- "I don't want to touch the UI", "do it from the terminal",
-  "headless setup", "non-interactive first-user setup".
-- "Create the first admin user from the CLI".
-- "Push a starter template", "create my first workspace".
-
-Do **not** activate for upgrading an existing deployment, editing
-an existing template, or troubleshooting an already-running
-server. Point the user at <https://coder.com/docs/install/upgrade.md>,
-the relevant `admin/...` page, or
-<https://coder.com/docs/support.md> for those.
 
 ## Talking to the user
 
