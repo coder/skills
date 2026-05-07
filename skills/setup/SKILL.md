@@ -116,6 +116,24 @@ Hard rules for every message you send the user:
   command that matches how Coder is actually running before you
   show anything to the user. Never paste the alternatives
   literally.
+- **Do not point the user at `coder.com/docs/*.md` pages or any
+  documentation URL in user-facing text.** Those `.md` pages
+  exist so the agent (you) can read them and apply the
+  guidance. The user installed Coder so an agent would do this
+  work for them; sending them a doc link is telling them to go
+  read the manual instead. The only URLs that belong in chat
+  are concrete user destinations (the deployment's access URL,
+  `coder.com/trial` for license signup, similar). Documentation
+  reading is yours, not theirs.
+- **Do not hand the user a CLI walkthrough as "what to try
+  next."** Lines like `coder templates init`, `coder templates
+  push`, `coder ssh <name>`, `coder licenses add` are things
+  the agent runs, not things the user has to learn. If the
+  user might want one of those actions, offer to do it for
+  them in plain English ("want me to add a different starter?"
+  / "want me to wire up Okta sign-in?") and run it when they
+  say yes. The point of the skill is that the user doesn't
+  have to type these commands.
 
 A short concept glossary you can pull plain-English phrases from:
 
@@ -1141,24 +1159,14 @@ To start, stop, or check on Coder later:
 
 What to try next:
 
-  - Open the example dev environment "$WORKSPACE_NAME" in your
-    browser (or run `coder ssh $WORKSPACE_NAME`).
-  - Build your own dev environments by editing the example
-    project, or pick a different starter:
-      coder templates list
-      coder templates init --id <id> ./mytemplate
-      coder templates push mytemplate -d ./mytemplate --yes
-    Templates use Terraform; the guide is at
-    https://coder.com/docs/admin/templates/creating-templates.md
-  - Want to add things like Okta / Entra sign-in, GitLab,
-    custom domains, or cloud workspaces? See:
-      https://coder.com/docs/admin/users/oidc-auth.md
-      https://coder.com/docs/admin/users/github-auth.md
-      https://coder.com/docs/admin/networking/wildcard-access-url.md
-      https://coder.com/docs/admin/provisioners.md
+  - Open "$WORKSPACE_NAME" in Coder right now.
+  - Use it like any other dev environment from your editor or
+    a browser; no extra setup on your end.
 
-Working files are in $STATE_DIR. Delete that directory to clean
-up what setup wrote here.
+Ask me about anything else; I'm still here.
+
+Working files are in $STATE_DIR. Delete that directory to undo
+what setup wrote here.
 ```
 
 For Docker compose, swap the "Coder is running" sentence and
@@ -1223,17 +1231,27 @@ that flow yourself; it collects PII (name, phone, job title,
 company, country, dev count) and posts to the licensor:
 
 ```text
-If you ever want to try Premium features, request a license at
-https://coder.com/trial and add it under Settings -> Licenses
-(or `coder licenses add -f license.jwt`). You don't have to do
-this now, and I won't do it for you.
+If you ever want to try Premium features (Workspace Proxies,
+groups, audit log retention, template ACLs), let me know and
+I'll point you at https://coder.com/trial to request a key.
+The trial signup collects some company info, so I'll leave
+that part to you.
 ```
 
-End the handoff with a one-line offer:
+End the handoff with one short, plain-English offer. Don't list
+topic URLs at the user; the agent (you) does the work, the
+user just says yes:
 
-> "Anything you want to wire up next? OIDC, GitLab, a wildcard
-> domain, your own template? I can point you at the right docs
-> page and walk you through it."
+> "Want me to set up sign-in with Okta / Entra / Google, GitLab,
+> a custom domain, or a different kind of dev environment
+> next? Just say which one and I'll handle it."
+
+Do not include `.md` documentation links, raw file paths to
+upstream docs, or `coder.com/docs/...` URLs in any of the
+user-facing text above. Those exist for the agent's benefit;
+the user installed Coder so the agent would do this work for
+them. Mentioning a doc page tells them "go read the manual,"
+which defeats the purpose of having installed the skill.
 
 ## Anti-patterns
 
@@ -1330,6 +1348,21 @@ End the handoff with a one-line offer:
   notes to you. Pick the single command pair that matches how
   Coder is actually running (host / Docker compose / systemd /
   Kubernetes) before printing.
+- **Do not put `coder.com/docs/*.md` (or any other docs URL) in
+  user-facing text.** Documentation pages are for the agent to
+  read and apply, not for the user to study. If a topic is
+  worth raising, offer to handle it ("want me to wire up Okta
+  sign-in?") and read the docs page yourself when they say
+  yes. Real users have reported the Phase 7 handoff dumping
+  five `.md` URLs at them, which made the install feel like
+  homework.
+- **Do not hand the user a CLI walkthrough as "what to try
+  next."** `coder templates init`, `coder templates push`,
+  `coder ssh`, `coder licenses add`: those are agent
+  operations, not user instructions. If the user wants one of
+  those, offer it in plain English and run it for them. The
+  point of the skill is that the user doesn't have to learn
+  the CLI.
 - **Do not leave OAuth scratch files lying around.** The GitHub
   device-flow recipe writes a cookie jar and an env file under
   `$STATE_DIR/github-device.*`. Both step 1 and step 3 must
