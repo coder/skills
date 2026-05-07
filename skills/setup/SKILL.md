@@ -39,6 +39,88 @@ Do **not** activate for upgrading an existing deployment, editing an
 existing template, or troubleshooting an already-running server. Point
 the user at <https://coder.com/docs> for those.
 
+## Talking to the user
+
+Assume the user has never used Coder and does not know what a
+template, workspace, agent, provisioner, access URL, wildcard URL,
+or external auth provider is. They asked you to install Coder; they
+did not ask for a tour of its internals. Run the install for them.
+
+Hard rules for every message you send the user:
+
+- **No flags, env-var names, or config keys in user-facing
+  questions.** `--first-user-trial`, `CODER_ACCESS_URL`,
+  `CODER_WILDCARD_ACCESS_URL`, and `CODER_EXTERNAL_AUTH_*` are
+  internal details. The user should never see them in a question.
+  They can appear in commands you run, and in the final summary as
+  paths to files you wrote, but not as a thing the user has to
+  understand.
+- **Explain the thing before you name it.** If you must use a Coder
+  term, say what it does first in one short sentence, then use the
+  term. Example: "a starter project that builds workspaces (Coder
+  calls this a *template*)".
+- **Ask one yes/no or one short choice at a time.** Never present a
+  decision matrix. If you need three answers, ask three questions in
+  sequence, each phrased so a non-technical user can answer.
+- **Default aggressively.** Pick the obvious default and ask the
+  user to confirm, instead of making them choose from options.
+  "I'll set this up so it's reachable from a public URL Coder
+  generates for you. Sound good?" is better than "Pick an access URL
+  strategy."
+- **Never blame the user for missing context.** If you need
+  something they haven't given you (a domain name, a database
+  connection string), explain in one line what it's for and what a
+  valid example looks like.
+- **Translate errors.** Don't paste raw server logs at the user.
+  Read the log yourself, decide what's wrong, and tell them in plain
+  English. Show the raw log only if they ask, or as a follow-up
+  after the plain-English explanation.
+- **No "Coder-ese" in the final summary.** The summary block at the
+  end (Phase 8) is what the user reads first. Use "sign-in page",
+  "the app you can open in a browser", "the example project", not
+  "access URL", "dashboard", "template".
+
+Examples of the same question in DevOps voice vs user voice:
+
+| DevOps voice (don't)                          | User voice (do)                                                                                  |
+|-----------------------------------------------|--------------------------------------------------------------------------------------------------|
+| "Pick a deployment mode: trial or production."| "Are you trying Coder out, or setting it up for your team to use long-term?"                     |
+| "Provide an access URL."                      | "What address should people open in their browser to use this? (Like `coder.yourcompany.com`.)" |
+| "Configure the wildcard access URL."          | "Some apps inside workspaces work better if Coder gets a wildcard DNS record. Want me to set that up, or skip it?" |
+| "First-user auth: GitHub or password?"        | "To sign in, do you want to click a 'Sign in with GitHub' button, or use an email and password I'll generate for you?" |
+| "Register an external auth provider."         | "Should workspaces be able to clone your private GitHub repos? (yes / no / not sure)"            |
+| "Push the docker starter template."           | "I'll set up an example project that builds Linux workspaces in Docker. OK?"                     |
+| "Workspace agent reached lifecycle=ready."    | "Your first workspace is up and ready to open."                                                  |
+
+A short concept glossary you can pull plain-English phrases from:
+
+- **Coder** -> "a thing that gives you and your team cloud
+  development environments you open in the browser or in your
+  editor".
+- **Access URL** -> "the web address people will open to use
+  Coder".
+- **Wildcard URL** -> "a DNS setup that lets apps inside your dev
+  environment have their own subdomain (optional, only matters for
+  some apps)".
+- **Workspace** -> "a single dev environment for one person".
+- **Template** -> "a recipe Coder follows when it builds a
+  workspace; e.g. 'one Linux container with VS Code'".
+- **Agent** -> "the small helper that runs inside a workspace so
+  Coder can talk to it". Most users never need to know this exists.
+- **Provisioner** -> "the thing that actually builds workspaces
+  when someone asks for one". Users never need to know this exists
+  unless they explicitly need cloud isolation.
+- **External auth** -> "letting workspaces sign in to GitHub /
+  GitLab / etc. so they can clone private repos".
+- **Owner** -> "the admin account; the first person to sign in
+  becomes one automatically".
+- **Trial license** -> a paid feature unlock; the skill never turns
+  this on. Don't bring it up.
+
+If the user asks for technical detail ("what flag does that map
+to?", "show me the env var"), you can shift to engineer voice for
+that one answer; default back to plain English on the next turn.
+
 ## Workflow
 
 Follow these phases in order. Each has a clear exit criterion. Confirm
@@ -120,124 +202,185 @@ deployment.
 #### Pick the deployment mode
 
 Decide between **trial** and **production** before anything else.
-Almost every later choice (access URL, database, TLS, external auth,
-provisioner topology) follows from the mode.
+It drives almost every later choice: where the server runs, whether
+it needs a real domain, whether it needs a managed database. Don't
+show this as a config-style question; ask in plain English.
 
-| Signal                                                | Mode       |
+Ask like this (pick whichever matches what the user has already
+said):
+
+- "Are you trying Coder out on this machine, or setting it up for
+  your team to use long-term?"
+- "Is this a quick try-it-out, or the real thing for your
+  company / team?"
+
+Map the answer:
+
+| What the user said                                    | Mode       |
 |-------------------------------------------------------|------------|
-| "Try Coder", "kick the tires", "demo", "play with it" | trial      |
-| Localhost, single host, single user, throwaway        | trial      |
-| Real domain named (`coder.example.com`)               | production |
-| HTTPS / TLS / Let's Encrypt / cert-manager mentioned  | production |
+| "trying it out", "demo", "play with it", "just me"    | trial      |
+| "on this laptop", "my server", "throwaway"            | trial      |
+| Names a real domain (`coder.example.com`)             | production |
+| "HTTPS", "TLS", "Let's Encrypt", "behind a proxy"     | production |
 | "For my team", "for the company", "staging"           | production |
-| Cloud workspaces with shared cloud account            | production |
+| "Cloud workspaces" with a shared cloud account        | production |
 
-When the signals conflict, ask. Don't guess.
+If signals conflict, ask one short follow-up. Don't guess.
 
 `references/production.md` is the entry point for the production
 path. Read it before continuing into Phase 2 if you've picked
 production.
 
-#### Pick the first-user auth method
+#### Pick how the user will sign in
 
-Fresh deployments auto-enable a default "Continue with GitHub"
-button on the dashboard, backed by Coder's own OAuth App. The first
-user to sign in (any path, any method) is auto-promoted to Owner.
-That means you have two ways to bootstrap:
+Fresh deployments come with a "Sign in with GitHub" button on the
+login page already turned on, using a GitHub OAuth App that Coder
+hosts. Whoever signs in first becomes the admin (Coder calls this
+the Owner) automatically. So there are two reasonable paths:
 
-- **GitHub** (recommended for solo and small-team trials). The user
-  opens the access URL once, clicks "Continue with GitHub", and is
-  the Owner of the deployment. No password to record. Skill skips
-  the `coder login --first-user-*` flow entirely.
-- **Username and password.** Fully scripted; no browser involved.
-  Skill generates a strong password, writes the credentials to
-  `~/.config/coder-install/credentials` (mode 0600) so the user has
-  a recovery path, and uses `coder login --first-user-*`.
+- **GitHub button.** The user opens the sign-in page in a browser
+  once, clicks "Continue with GitHub", and is the admin. Nothing
+  to write down. Best for solo trials, demos, and small teams
+  whose accounts already live on GitHub. Skill skips the scripted
+  account-creation step entirely.
+- **Email and password.** Fully scripted, no browser needed. The
+  skill picks a strong password, creates the admin account from
+  the terminal, and saves the email and password to a file at
+  `~/.config/coder-install/credentials` (readable only by the
+  current user) so the user can find them later.
 
-Ask the user once: "Sign in with GitHub, or generate a username and
-password?". Default to GitHub when the access URL will be
-browser-reachable (the auto-tunnel and `localhost` from the same
-machine both qualify); fall back to username/password if the user
-says no, asks for fully scripted setup, or runs in headless
-(`claude -p`) mode where there's no human to click the button.
+Ask the user once. Phrase it without jargon:
 
-For the username/password path, prefill the email from git config
-if present:
+> "To sign in to Coder, do you want to click a 'Sign in with
+> GitHub' button (easiest, needs a browser), or have me create an
+> email and password for you (works without a browser)?"
+
+Default to GitHub when the user will reach the sign-in page in a
+browser on the same machine you're installing on; fall back to
+email-and-password if they say no, ask for a fully scripted setup,
+or you're running in headless mode (`claude -p`) where there's no
+human to click the button.
+
+For the email-and-password path, prefill the email from git config
+if present, instead of asking cold:
 
 ```sh
 EMAIL_DEFAULT="$(git config --global --get user.email 2>/dev/null || true)"
 ```
 
-Ask the user to confirm or override.
+Then confirm with the user ("I'll use `$EMAIL_DEFAULT` as the admin
+email. OK, or use a different one?"). Don't ask them to type it
+from scratch unless git doesn't have one.
 
-#### Things to ask, by mode
+#### What to ask up front, by mode
 
-**Trial mode** (defaults that are usually fine):
+The goal is the smallest possible interview. Ask one thing at a
+time, in plain English. Defaults are listed so you can lead with
+them.
 
-- **Install target**: standalone host, Docker compose, or Kubernetes
-  via Helm. Default to compose if Docker is available; otherwise
-  standalone.
-- **Access URL**: do **not** ask. The skill defaults to letting
-  `coder server` open its built-in `*.try.coder.app` tunnel
-  automatically, which works on any host with internet egress and
-  sidesteps host-firewall and docker-bridge issues. Fall back to
-  `http://localhost:7080` only if the tunnel can't initialize
-  (offline host, blocked egress). See Phase 3 for the detection
-  recipe. The trial is publicly reachable on a non-guessable
-  subdomain protected by the admin's auth; that's an intentional
-  tradeoff in exchange for one-shot reliability.
-- **First-user auth**: see above.
-- **Starter template**: default to `docker` for compose / standalone
-  with Docker; `kubernetes` for Helm.
-- **Create a workspace?**: default yes for trial.
+**Trial mode.** You only need one or two things from the user;
+everything else has a sane default.
 
-**Production mode**: collect every input before mutating anything.
-Minimum input set:
+- **Where to run it.** Default: Docker if it's on the machine,
+  otherwise install it directly on the machine. Don't lecture about
+  options; pick the default and confirm.
+  > "I'll run Coder using Docker on this machine. Sound good, or
+  > do you want it installed directly instead?"
+- **Web address (access URL).** Don't ask. The skill defaults to
+  letting Coder open its own public URL automatically (a random
+  `*.try.coder.app` address that only people with the link can
+  use). It works on any machine with internet, and avoids local
+  firewall and Docker networking gotchas. Tell the user what's
+  happening, don't ask:
+  > "I'll get Coder a public URL automatically so you can open it
+  > from anywhere. It's protected by your sign-in, but if you'd
+  > rather keep it local-only, say so."
+  Fall back to a local-only URL only if the user opts in or the
+  automatic one fails. See Phase 3 for the detection recipe.
+- **Sign-in method.** See the section above.
+- **Example project to start with.** Default: a Linux container
+  via Docker (Coder calls this the `docker` template), or one
+  Linux pod via Kubernetes if you're going through Helm.
+  > "I'll add an example project that builds a Linux dev
+  > environment in Docker so you have something to open. OK?"
+- **Build a first dev environment now?** Default yes for trial.
+  > "Want me to build your first dev environment now so you can
+  > open it as soon as Coder is ready?"
 
-- Real HTTPS access URL (`https://coder.example.com`); never the
-  tunnel.
-- TLS termination point: at the Coder server (PEM files) or at a
-  reverse proxy / ingress. Pick one.
-- Managed PostgreSQL connection string. Built-in PG is trial-only.
-- First-user auth method. The default GitHub provider works in
-  production too; only ask for username/password if GitHub login
-  doesn't fit the org.
-- Starter template matching the deployment's Docker / Kubernetes /
-  cloud target. See `references/templates.md`.
+**Production mode.** You need a few things from the user before
+touching anything. Ask in plain English; don't make them recite a
+config file.
 
-Ask **only if relevant** (don't surface these as required):
+- **The web address people will open.** This is mandatory.
+  > "What address should everyone open in their browser to use
+  > Coder? Something like `coder.yourcompany.com`. (You can set
+  > the DNS for it now or later, but I need to know the address
+  > to wire things up.)"
+- **Who handles HTTPS.** Either Coder itself, or a proxy /
+  load balancer / Kubernetes ingress in front of it. Lead with
+  the user's existing setup if you can spot one (cert-manager,
+  nginx, Caddy).
+  > "Are you using something like cert-manager, nginx, or Caddy
+  > to handle HTTPS already, or should Coder handle HTTPS itself
+  > using cert files I'll point it at?"
+- **Database.** Coder needs a real Postgres for production; the
+  built-in one is trial-only.
+  > "Coder needs a Postgres database for production. Do you have
+  > one I can point it at? (If yes, I'll need its connection
+  > string. If you're not sure, I can show you what one looks
+  > like.)"
+- **Sign-in method.** Same question as above.
+- **What kind of dev environments people want.** Maps to the
+  example project (template) you'll add.
+  > "What should the first dev environment look like? Linux
+  > container in Docker, a Kubernetes pod, or a cloud VM
+  > (AWS / GCP / Azure)?"
+  Then pick from `references/templates.md` based on the answer.
 
-- **Wildcard URL** (`*.coder.example.com`). Needed for subdomain
-  app routing, which is what backs `coder port-forward` and many
-  embedded `coder_app` ports. If the user doesn't need
-  port-forwarding or hits no apps that break under path-based
-  proxying, omit it. Most teams want it; ask once.
-- **Custom external auth provider** (GHES, GitLab, a non-default
-  GitHub OAuth App). The default github.com provider is on
-  automatically; only register a custom one if the user has a
-  reason. Ask after the deployment is up, not in Phase 1.
-- **External provisioner**. Required only when cloud workspaces
-  must run with isolated credentials. Ask if the chosen template
-  needs cloud creds; otherwise skip.
+Ask these **only if relevant** (don't ever surface them as
+required):
+
+- **Subdomain routing for in-workspace apps.** Some apps inside
+  workspaces (notebooks, web previews) work better when each one
+  gets its own subdomain. This needs a wildcard DNS record. If
+  the user mentions "port forwarding" or "opening apps in the
+  workspace", offer it; otherwise leave it off.
+  > "Some apps inside dev environments work better if Coder gets
+  > a wildcard DNS record (`*.coder.yourcompany.com`). Want me
+  > to set that up, or skip it for now? You can always add it
+  > later."
+- **Custom GitHub / GitLab login.** The default "Sign in with
+  GitHub" button uses GitHub.com out of the box. If the team is
+  on GitHub Enterprise, GitLab, or wants to use their own OAuth
+  App, you'll set up a custom one in Phase 5. Don't ask in
+  Phase 1; the default works.
+- **Cloud-isolated builds.** Only matters when workspaces will
+  run in a cloud account whose credentials shouldn't sit on the
+  Coder server. Ask only if the chosen example project needs
+  cloud creds.
+  > "This template needs an AWS account to build workspaces. Do
+  > you want me to keep the AWS credentials off the Coder server
+  > (recommended for production), or is it OK to put them there
+  > for now?"
 
 Full decision matrix and order of operations:
 `references/production.md`. Per-topic detail in `wildcard-tls.md`,
 `external-auth-github.md`, and `external-provisioner.md`.
 
-If the user has not expressed a preference, propose a default plan
-and ask for a single yes/no confirmation before doing anything that
-mutates the system. In production mode, also echo back the planned
-DNS records, env vars (without secret values), and ingress hostnames
-so the user can spot-check before the server starts.
+When the user has not expressed a preference, propose the default
+plan in one paragraph and ask for a single yes/no before mutating
+the system. In production mode, also list the DNS names you'll
+need and the database string in the same paragraph, so the user
+can spot-check before the server starts.
 
 **Headless mode** (`claude -p`, no interactive shell): the user
-cannot answer a yes/no prompt and cannot click a browser button.
-Treat the original prompt as the approval. For first-user auth,
-default to username/password (browser GitHub flow needs a human).
-If the prompt doesn't include the required values for production
-(access URL, TLS termination, optional wildcard / OAuth /
-provisioner key), refuse with a one-line error listing what's
-missing rather than blocking on stdin.
+can't answer a yes/no prompt and can't click a browser button.
+Treat the original prompt as the approval. For sign-in, default to
+email-and-password (browser GitHub flow needs a human). If the
+prompt is missing something required for production (web address,
+HTTPS strategy, database, optional wildcard / OAuth / provisioner
+key), refuse with a one-line error listing what's missing in plain
+English, instead of blocking on stdin.
 
 ### Phase 2: Install
 
@@ -416,51 +559,60 @@ curl -fsS https://app-test.coder.example.com/healthz
 
 Full env-var matrix and common failures: `references/wildcard-tls.md`.
 
-### Phase 4: Bootstrap the first admin user
+### Phase 4: Sign in as the admin
 
-Fresh deployments auto-promote whoever signs in first to Owner. The
-two paths produce the same end state; pick the one that matches the
-auth method chosen in Phase 1.
+Whoever signs in to a fresh Coder first becomes the admin (Owner)
+automatically. Pick the path that matches what the user said in
+Phase 1.
 
-#### GitHub path
+#### GitHub path (browser)
 
-Fresh deployments auto-enable a default GitHub OAuth app on the
-dashboard. The user opens the access URL once, clicks "Continue
-with GitHub", lands back in Coder as Owner. No password to record,
-no `coder login --first-user-*` invocation.
+The sign-in page already has a "Sign in with GitHub" button. The
+user clicks it once, approves access on GitHub, and they're the
+admin. Tell them this in plain English; don't reference "OAuth
+apps" or "the dashboard" unless they ask:
 
 ```text
-Open the dashboard:
+Coder is ready. Open this address in your browser:
 
   $ACCESS_URL
 
-Click "Continue with GitHub", authorize the OAuth app, and return
-to Coder. You'll be the Owner of this deployment.
+Click "Sign in with GitHub", approve the prompt on GitHub's site,
+and you'll come back to Coder signed in as the admin. Nothing for
+you to write down.
 ```
 
-While the user does that, link the local CLI to the deployment so
-the rest of the skill can run admin commands:
+While the user does that, link your terminal to the same
+deployment so the rest of the install (adding an example project,
+building their first dev environment) can run as admin:
 
 ```sh
 coder login "$ACCESS_URL"
 ```
 
-This opens a browser to the same access URL; the user signs in once
-and the CLI captures the session token. Verify:
+This pops a browser to the same address; the user signs in once,
+and the terminal grabs a session token. Verify quietly:
 
 ```sh
 coder whoami
 coder users list
 ```
 
-`users list` shows exactly one row with `OWNER` in the roles column,
-the email or login from GitHub.
+`users list` should show exactly one row with `OWNER` in the
+roles column, with the email or login from GitHub. If it doesn't,
+stop and tell the user something went wrong with the GitHub sign
+in. Don't paste raw output; say what's wrong in one line.
 
-#### Username and password path
+#### Email and password path (no browser)
 
-Use `coder login` with `--first-user-*` flags, **including
-`--first-user-trial=false`**: if neither the flag nor
-`CODER_FIRST_USER_TRIAL` is set, the CLI prompts on stdin and the
+This path creates the admin account from the terminal so the user
+doesn't have to click through anything. Tell them what's happening,
+and make sure the credentials end up in a file they can find later;
+if they lose this password there's no recovery.
+
+Under the hood: use `coder login` with `--first-user-*` flags,
+**including `--first-user-trial=false`**. Without the flag and
+without `CODER_FIRST_USER_TRIAL`, the CLI prompts on stdin and the
 headless flow hangs.
 
 Pass the password through the env, not the command line, so it
@@ -702,70 +854,98 @@ If the agent stalls in `connecting`, see
 The usual cause on a single-host Linux setup is the trial-path
 binding to `127.0.0.1`, which is unreachable from the workspace
 container.
-### Phase 8: Summarize
+### Phase 8: Wrap up and tell the user what they got
 
-Print one block at the end, clearly delimited. Substitute the
-placeholders for the values from this run; don't print fields that
-don't apply.
+After everything is up, print one short block, clearly delimited.
+It's the first thing the user reads when they get back to the
+terminal, so write it like a handoff, not a config dump. Use plain
+labels ("Open in your browser", not "Access URL"), and only show
+fields that apply this run.
 
-For the **GitHub auth path**:
-
-```text
-=== Coder is ready ===
-Access URL:      $ACCESS_URL
-Wildcard URL:    $WILDCARD_URL    (production, if configured)
-Sign in with:    GitHub (open the access URL and click "Continue with GitHub")
-Template:        $TEMPLATE_NAME
-Workspace:       $WORKSPACE_NAME  (or: not created)
-Server log:      <command for the install method, see below>
-Stop:            <command for the install method, see below>
-```
-
-For the **username/password path**:
+If the user signed in with the **GitHub button**:
 
 ```text
 === Coder is ready ===
-Access URL:      $ACCESS_URL
-Wildcard URL:    $WILDCARD_URL    (production, if configured)
-Username:        $USERNAME
-Email:           $EMAIL
-Password:        $PASSWORD        (saved to ~/.config/coder-install/credentials)
-Template:        $TEMPLATE_NAME
-Workspace:       $WORKSPACE_NAME  (or: not created)
-Server log:      <command for the install method, see below>
-Stop:            <command for the install method, see below>
+
+Open in your browser:   $ACCESS_URL
+  (Click "Sign in with GitHub" if you haven't already.)
+
+Your first dev environment:  $WORKSPACE_NAME
+  (or: skipped, you can create one from the dashboard)
+
+If you want to add more dev environments later, you'll use the
+example project named "$TEMPLATE_NAME" that's already set up.
+
+When you want to stop or restart Coder, see below.
 ```
 
-`Stop:` command by install method:
+If the user got an **email and password** instead:
 
-- nohup (trial): `kill "$(cat ~/.coder-server.pid)"`
-- systemd: `sudo systemctl stop coder`
-- Docker compose: `docker compose down` in the deployment directory
-  (add `-v` only when the user has explicitly asked to delete the
-  database).
-- Helm: `helm uninstall coder -n coder`.
+```text
+=== Coder is ready ===
 
-`Server log:` command by install method:
+Open in your browser:   $ACCESS_URL
 
-- nohup (trial): `tail -f $HOME/.coder-server.log`
-- systemd: `journalctl -u coder -f`
-- Docker compose: `docker compose logs -f coder`
-- Helm: `kubectl logs -n coder deploy/coder -f`
+Sign in with:
+  Email:    $EMAIL
+  Password: $PASSWORD
 
-For production deploys with custom integrations, also remind the
-user to record (these don't have a "show me again" command; back
-them up out of band):
+These are saved to ~/.config/coder-install/credentials so you
+can find them later. Don't share that file.
 
-- A custom GitHub OAuth App's client ID and callback URL, if one
-  was registered in Phase 5. The default github.com provider needs
-  no recording; it's managed by Coder.
-- The external provisioner key fingerprint, if one was generated.
-- The TLS cert paths and DNS records.
+Your first dev environment:  $WORKSPACE_NAME
+  (or: skipped, you can create one from the dashboard)
+
+If you want to add more dev environments later, you'll use the
+example project named "$TEMPLATE_NAME" that's already set up.
+
+When you want to stop or restart Coder, see below.
+```
+
+Then append two short lines that match how Coder is actually
+running on this machine. Don't dump all four; pick the one that
+applies.
+
+To see Coder's logs:
+
+- Started in the background by the skill (trial):
+  `tail -f $HOME/.coder-server.log`
+- systemd service:        `journalctl -u coder -f`
+- Docker compose:         `docker compose logs -f coder`
+- Kubernetes via Helm:    `kubectl logs -n coder deploy/coder -f`
+
+To stop Coder:
+
+- Started in the background by the skill (trial):
+  `kill "$(cat ~/.coder-server.pid)"`
+- systemd service:   `sudo systemctl stop coder`
+- Docker compose:    `docker compose down` in the install
+  directory. Don't add `-v` unless the user explicitly asks to
+  wipe everything; it deletes the database and every dev
+  environment.
+- Kubernetes via Helm: `helm uninstall coder -n coder`.
+
+For production setups with custom integrations, also remind the
+user to write down the things you can't show again later:
+
+- A custom GitHub / GitLab OAuth App's client ID and callback URL,
+  if you registered one in Phase 5. (The default "Sign in with
+  GitHub" button has nothing to record; Coder manages it.)
+- The provisioner key fingerprint, if you generated one for
+  cloud-isolated builds.
+- The TLS cert file paths and the DNS records you set up.
 
 
 
 ## Anti-patterns
 
+- **Do not write to the user like a sysadmin.** If a user-facing
+  message contains a flag (`--first-user-trial`), an env var
+  (`CODER_ACCESS_URL`), an internal noun ("OAuth provider",
+  "reverse proxy", "ingress", "terraform"), or a config matrix,
+  rewrite it. Decide what they need to know in plain English,
+  pick a default, and ask for one short answer. The user does
+  not need to learn Coder's vocabulary to use this skill.
 - **Do not run `pkill coder` (or any blanket `kill` against the coder
   binary) when `CODER_AGENT_TOKEN` is set.** That terminates the
   workspace agent the user is connected through. See
