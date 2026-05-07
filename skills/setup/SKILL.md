@@ -141,6 +141,32 @@ Each phase has a clear exit criterion. Confirm before any
 destructive action (system package install, opening ports,
 overwriting kubeconfigs, deleting volumes).
 
+### Move quickly
+
+Users expect this install to feel fast, not deliberate. Keep
+your tool calls economical:
+
+- Don't read `references/first-user-github-device.md` to
+  remember the protocol. The protocol is summarized at the call
+  site in Phase 4 and the steps are real bundled scripts under
+  `scripts/`. Read the reference only when something fails and
+  the failure mode isn't already covered in Phase 4.
+- Don't run probes you don't need. The host probe in Phase 1
+  exists to fill in defaults; if the user already answered the
+  five core questions, you don't need to detect the package
+  manager or the distro version.
+- Combine related shell into one tool call. A short multi-line
+  block (`mkdir; curl; verify`) is one round trip; the same
+  three operations as three separate tool calls is three round
+  trips of latency. The exception is the GitHub device flow,
+  which must stay split for the reason documented at the
+  Phase 4 call site.
+- Stream long-running commands instead of waiting on their full
+  output. `coder server`, `coder templates push`, and
+  `coder create` all take a while; tail their logs from a
+  state-dir file rather than blocking the chat on their
+  stdout.
+
 1. **Discover.** Ask the user a small set of questions in plain
    English. Probe the host afterward to fill in defaults.
 2. **Install.** Use `install.sh` (or Helm / compose).
@@ -161,24 +187,62 @@ page on coder.com/docs and apply it.
 ### Phase 1: Discover
 
 Lead with the user. Walk away from this phase with the shortest
-possible interview answered (mode, infrastructure, sign-in
-method) so Phases 2 onward have everything they need. Only after
-the user has answered, probe the host quietly to fill in any
-remaining defaults.
+possible interview answered (familiarity, mode, infrastructure,
+sign-in, dev environment) so Phases 2 onward have everything
+they need.
 
-The order is:
+**Ask all five core questions in a single message.** Real users
+report that an agent asks only the first two and then guesses
+the rest, which silently turns the install into a Docker /
+email / no-workspace deployment without consent. One message
+with five clearly numbered questions is dramatically more
+reliable than five sequential turns. Wait for the user's reply,
+parse the answers, then do everything else without asking
+again.
 
-1. Ask the familiarity question (new to Coder, or used it
-   before).
-2. Ask the deployment-mode question.
-3. Ask the infrastructure question.
-4. Ask the sign-in question.
-5. Ask the small per-mode follow-ups.
-6. *Then* probe the host (what package manager, is Docker
-   installed, is there an existing Coder login, is this a
-   workspace).
-7. Show the user one short plan paragraph and get a single
-   yes/no.
+The five questions, verbatim:
+
+> Before I start, five quick questions:
+>
+>   1. Have you used Coder before, or is this your first time?
+>   2. Are you trying Coder out on this machine, or setting it
+>      up for your team to use long-term?
+>   3. Where do you want Coder to run? Docker on this machine,
+>      Kubernetes / Helm against a cluster, directly on this
+>      machine (binary + systemd), or something else (Rancher,
+>      OpenShift, AWS / GCP / Azure, air-gapped)?
+>   4. For sign-in, GitHub (I'll show you a short URL and a
+>      code; works from any phone) or just create an email and
+>      password for you?
+>   5. After Coder is up, do you want me to push a starter dev
+>      environment and build the first one for you (default
+>      yes)? If you have a specific kind in mind (Linux
+>      container in Docker, Kubernetes pod, cloud VM, your own
+>      Terraform), say so; otherwise I'll match what you picked
+>      in question 3.
+
+If the user gives short answers ("new", "trying out", "docker",
+"github", "yes"), accept them. If they answer fewer than five,
+ask only for the missing ones; do not re-ask the ones they
+answered.
+
+After the answers come in:
+
+1. Map each answer using the tables in the per-question
+   subsections below.
+2. Probe the host quietly (what package manager, is Docker
+   installed, is there an existing Coder login, is this itself
+   a Coder workspace).
+3. Show the user one short plan paragraph and get a single
+   yes/no before doing anything destructive.
+
+Do not run any of those probes before the questions. The user
+should see a single batched question, not a screen of
+`uname -a` / `which docker` / `cat /etc/os-release` output
+followed by partial questions.
+
+The per-question subsections below describe how to map each
+answer; they are not separate ask turns.
 
 Hard guards run with the actions they protect, not in this phase:
 
@@ -189,14 +253,11 @@ Hard guards run with the actions they protect, not in this phase:
   the host already has a Coder session pointing somewhere the
   user wouldn't want overwritten) runs at the start of Phase 4.
 
-#### Read the audience
+#### Read the audience (question 1)
 
-Ask one short question first:
-
-> "Have you used Coder before, or is this your first time?"
-
-This isn't paperwork. It changes how you talk for the rest of
-the install. Map the answer:
+This is question 1 in the batched-five message above; it is not
+a separate ask turn. Use the answer to set the audience mode
+for the rest of the install. Map the answer:
 
 | What the user said                                              | Mode      |
 |-----------------------------------------------------------------|-----------|
@@ -233,15 +294,10 @@ If the user later asks "what's a template?" or "what's an
 agent?", switch to new-mode for that turn regardless of what
 they said earlier.
 
-#### Pick the deployment mode
+#### Pick the deployment mode (question 2)
 
-Decide between **quick-start** and **production** before anything
-else. It drives almost every later choice. Ask in plain English:
-
-> "Are you trying Coder out on this machine, or setting it up
-> for your team to use long-term?"
-
-Map the answer:
+This is question 2 in the batched-five message. The answer
+drives almost every later choice. Map it:
 
 | What the user said                                    | Mode        |
 |-------------------------------------------------------|-------------|
@@ -261,22 +317,11 @@ in step 6 below; the production install layout (managed Postgres,
 TLS, Helm values, ingress) is documented there and changes more
 often than this skill does.
 
-#### Pick the infrastructure
+#### Pick the infrastructure (question 3)
 
-Always ask. Don't silently default to Docker; the user may have a
-strong preference based on what they already run.
-
-> "Where do you want Coder to run? I can set it up:
->
->   1. **Docker** on this machine (easiest if Docker is installed).
->   2. **Kubernetes / Helm** against a cluster you have access to.
->   3. **Directly on this machine** (the binary, with systemd).
->
-> Pick a number, or tell me about your setup if it's something
-> else (Rancher, OpenShift, AWS / GCP / Azure, air-gapped) and
-> I'll point you at the right docs page."
-
-Map the answer:
+This is question 3 in the batched-five message. Never silently
+default to Docker; the answer must come from the user.
+Map it:
 
 | User says                            | Install path                                              |
 |--------------------------------------|-----------------------------------------------------------|
@@ -297,34 +342,25 @@ Docker if installed, else Kubernetes if `kubectl` has a current
 context, else direct install. Confirm the recommendation in one
 short sentence; don't lecture.
 
-#### Pick how the user will sign in
+#### Pick how the user will sign in (question 4)
 
-Fresh deployments come with a built-in "Sign in with GitHub" path
-turned on, using a GitHub OAuth App that Coder hosts. Whoever
-signs in first becomes the admin (the Owner) automatically. Two
-reasonable paths:
+This is question 4 in the batched-five message. Two reasonable
+paths:
 
 - **GitHub.** Drive GitHub's standard device-code flow over
-  Coder's API. The skill prints a short URL and an 8-character
-  code; the user opens the URL on whatever device is handy
-  (their phone is fine), pastes the code, approves access on
-  GitHub, and the skill captures the session and finishes setup.
-  No browser on the install machine, no password to record.
+  Coder's API. Print a short URL and an 8-character code; the
+  user opens the URL on whatever device is handy (their phone
+  is fine), pastes the code, approves access on GitHub, and
+  Phase 4 captures the session and finishes setup. No browser
+  on the install machine, no password to record.
 - **Email and password.** Fully scripted, no GitHub round trip.
-  The skill picks a strong password, creates the admin account
-  from the terminal, and saves the email and password to a file
-  in the install's state directory so the user can find them
-  later.
-
-Ask once, in plain English:
-
-> "For sign-in, do you want me to walk you through GitHub (I'll
-> show you a short URL and a code to paste; works from any
-> phone), or just create an email and password for you?"
+  Pick a strong password, create the admin account from the
+  terminal, save the email and password to a file in the
+  install's state directory.
 
 Default to GitHub when the user can reach github.com on any
-device. Fall back to email-and-password if they say no, ask for a
-fully scripted setup, or you're running in headless mode
+device. Fall back to email-and-password if they say no, ask
+for a fully scripted setup, or you're running in headless mode
 (`claude -p`) where there's no human to type a code.
 
 The device-code path only works on deployments where the Coder
@@ -344,21 +380,48 @@ EMAIL_DEFAULT="$(git config --global --get user.email 2>/dev/null || true)"
 Then confirm with the user. Don't make them type it from scratch
 unless git doesn't have one.
 
-#### Per-mode follow-ups
+#### Pick the dev environment (question 5)
 
-**Quick-start mode.** Just confirm the defaults; don't prompt for
-each one.
+This is question 5 in the batched-five message. Map the answer
+to a starter template and an initial workspace decision:
 
-- **Web address.** The skill defaults to letting Coder open its
-  own public URL automatically (a `*.try.coder.app` address).
-  Tell the user, don't ask. Fall back to a local-only URL only
-  if the auto-tunnel can't initialize (offline host) or the user
-  asks. Phase 3 has the detection recipe.
-- **Example project.** Default: a Linux container in Docker
-  (Coder calls this the `docker` template), or one Linux pod
-  via Kubernetes if you went through Helm. Confirm in one
-  sentence.
-- **Build a first dev environment now?** Default yes.
+| User says                                              | Template            | Build first workspace? |
+|--------------------------------------------------------|---------------------|-----------------------|
+| "yes", "sure", "go ahead"                              | match infra (below) | yes                   |
+| "no", "skip", "I'll do it later"                       | still push starter  | no                    |
+| "Linux container in Docker", "docker", "a container"   | `docker`            | yes                   |
+| "Kubernetes pod", "k8s", "on the cluster"              | `kubernetes`        | yes                   |
+| "cloud VM", "AWS", "GCP", "Azure"                      | matching cloud starter (see https://coder.com/docs/admin/templates.md) | yes |
+| "my own", "I have a Terraform module", names a repo    | none from skill; ask for the path; push that | yes if their template builds cleanly |
+
+Default template by infrastructure when the user just says "yes":
+
+| Infrastructure (question 3)        | Default template |
+|------------------------------------|------------------|
+| Docker                             | `docker`         |
+| Kubernetes / Helm                  | `kubernetes`     |
+| Direct (binary + systemd)          | `docker` if Docker is also installed; otherwise prompt; do not pick `kubernetes` without a kube context |
+
+If the user names a template you don't recognize, look it up
+on `https://coder.com/docs/admin/templates.md` (it's the
+authoritative list) before assuming it doesn't exist. Don't
+guess at template IDs; the canonical list is upstream and may
+add entries between releases.
+
+For a user-supplied Terraform module, treat the path or repo
+they gave you as the template source: `coder templates init`
+is not used; instead `coder templates push <name> -d <path>`
+directly. If the path is a git repo, ask whether to clone it or
+use a local checkout.
+
+#### Per-mode follow-ups (mode-specific extras)
+
+**Quick-start mode.** Confirm defaults silently; don't ask.
+
+- **Web address.** Default to Coder's automatic `*.try.coder.app`
+  address. Tell the user, don't ask. Fall back to a local-only
+  URL only if the auto-tunnel can't initialize (offline host)
+  or the user asks. Phase 3 has the detection recipe.
 
 **Production mode.** You need a few things from the user before
 touching anything. Ask in plain English; don't make them recite
@@ -852,32 +915,61 @@ if you need to keep credentials off the server.
 
 ### Phase 6: Create a workspace (optional)
 
-If the user wants a workspace right away:
+If the user said no in question 5, skip this phase entirely.
+Don't pile on a follow-up ask; respect the answer.
+
+**Discover required parameters before `coder create`.** Skipping
+this costs a wasted retry and several seconds of perceived
+latency: `coder create` without all required parameters either
+blocks on stdin (interactive) or fails with
+`Required parameter ... was not provided`. Pull the template
+first:
 
 ```sh
-coder create "$WORKSPACE_NAME" --template "$TEMPLATE_NAME" --yes
+TEMPLATE_PULL="$(mktemp -d)/$TEMPLATE_NAME"
+coder templates pull "$TEMPLATE_NAME" "$TEMPLATE_PULL"
 ```
 
-Pass parameters with repeated `--parameter "name=value"`.
-Templates evolve; never assume a starter has no required
-parameters. Discover them before calling `coder create`:
+Then scan `$TEMPLATE_PULL/main.tf` for `data "coder_parameter"`
+blocks. Each one looks like:
 
-```sh
-coder templates pull "$TEMPLATE_NAME" "$(mktemp -d)/$TEMPLATE_NAME"
-# Read main.tf for `data "coder_parameter"` blocks.
+```hcl
+data "coder_parameter" "jetbrains_ides" {
+  display_name = "..."
+  type         = "list(string)"
+  default      = jsonencode([])
+  ...
+}
 ```
 
-`coder create` without `--parameter` for a required parameter
-blocks on stdin and hangs the headless flow. List, map, and
-object parameters need a JSON value:
+For every parameter without a `default`, you need a value. For
+list / map / object parameters, the value must be JSON; an
+empty list is `[]`, an empty map `{}`. The starter Docker
+template's `jetbrains_ides` is the canonical example: it's a
+required multi-select with no default and a sensible "none"
+value is `[]`.
+
+When the user just said "yes, build the first one", pick
+sensible defaults for every required parameter (empty list for
+multi-selects with no default, the first option for
+single-select enums) without asking. Only ask the user when a
+parameter is required, has no default, and has no obvious
+zero-value (a free-text string used as an identifier, for
+example).
+
+Then create the workspace in one shot:
 
 ```sh
 coder create "$WORKSPACE_NAME" \
   --template "$TEMPLATE_NAME" \
   --parameter 'jetbrains_ides=[]' \
-  --parameter 'cpu=2' \
   --yes
 ```
+
+Pass parameters with repeated `--parameter "name=value"`. List,
+map, and object parameters need a JSON value. Never call
+`coder create` without all required parameters and hope; the
+failure mode is a wasted retry the user has to wait through.
 
 For `kubernetes`, the namespace must already exist.
 
@@ -1078,6 +1170,19 @@ End the handoff with a one-line offer:
 - **Do not assume Docker.** Ask the infrastructure question.
   Don't silently default; even when Docker is installed, the
   user may want Kubernetes or a direct install.
+- **Do not collapse Phase 1 into a two-question interview.**
+  The five core questions (familiarity, mode, infrastructure,
+  sign-in, dev environment) are non-negotiable. Real users have
+  reported agents asking only mode + sign-in and silently
+  guessing the rest, ending up with a Docker install and a
+  workspace they didn't know they were building. Send all five
+  in one batched message.
+- **Do not call `coder create` before reading the template's
+  required parameters.** A blind `coder create` against a
+  starter that has required list parameters (e.g.
+  `jetbrains_ides` on the Docker template) hangs on stdin or
+  fails outright, then forces a retry. `coder templates pull`
+  + a quick scan of `main.tf` is cheaper than the wasted retry.
 - **Do not echo cloud credentials, OAuth client secrets,
   provisioner keys, or the admin password back to the user.**
   Confirm receipt with `[set]` or a redacted form.
