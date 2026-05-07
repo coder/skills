@@ -93,6 +93,19 @@ Hard rules for every message you send the user:
   is what the user reads first. Use "sign-in page", "the app you
   can open in a browser", "the example project", not "access URL",
   "dashboard", "template".
+- **Do not narrate yourself.** The user does not know or care
+  that a "skill" exists. Never say "this skill", "the setup
+  skill", "I ran the skill", "I used the skill", or similar.
+  When you need to refer to what just happened, say "I installed
+  Coder", "the install", or "setup". The handoff messages and
+  any error explanations follow this rule too.
+- **Pick exactly one option in any user-facing template.** When
+  the skill text shows alternatives like
+  `<one of: tail -f ... | docker compose logs -f ...>`, that
+  notation is for you, not the user. Resolve it to the single
+  command that matches how Coder is actually running before you
+  show anything to the user. Never paste the alternatives
+  literally.
 
 A short concept glossary you can pull plain-English phrases from:
 
@@ -155,14 +168,16 @@ remaining defaults.
 
 The order is:
 
-1. Ask the deployment-mode question.
-2. Ask the infrastructure question.
-3. Ask the sign-in question.
-4. Ask the small per-mode follow-ups.
-5. *Then* probe the host (what package manager, is Docker
+1. Ask the familiarity question (new to Coder, or used it
+   before).
+2. Ask the deployment-mode question.
+3. Ask the infrastructure question.
+4. Ask the sign-in question.
+5. Ask the small per-mode follow-ups.
+6. *Then* probe the host (what package manager, is Docker
    installed, is there an existing Coder login, is this a
    workspace).
-6. Show the user one short plan paragraph and get a single
+7. Show the user one short plan paragraph and get a single
    yes/no.
 
 Hard guards run with the actions they protect, not in this phase:
@@ -173,6 +188,50 @@ Hard guards run with the actions they protect, not in this phase:
 - The existing-login guard (only isolate `CODER_CONFIG_DIR` when
   the host already has a Coder session pointing somewhere the
   user wouldn't want overwritten) runs at the start of Phase 4.
+
+#### Read the audience
+
+Ask one short question first:
+
+> "Have you used Coder before, or is this your first time?"
+
+This isn't paperwork. It changes how you talk for the rest of
+the install. Map the answer:
+
+| What the user said                                              | Mode      |
+|-----------------------------------------------------------------|-----------|
+| "first time", "new to Coder", "never used it", "just heard of it" | new       |
+| "used it", "have a deployment", "familiar", "upgrading", "moving" | familiar  |
+| anything ambiguous                                              | new       |
+
+Default to **new** when in doubt. The cost of explaining a term
+the user already knows is one extra sentence. The cost of
+shipping jargon at someone who's never seen it is that they get
+stuck.
+
+What the modes change:
+
+- **new.** Whenever you reach a Coder-specific concept
+  (workspace, template, agent, provisioner, access URL, wildcard
+  URL, external auth), pause for one sentence in plain English
+  before using the word. Example: "Coder builds your dev
+  environments from a recipe written in Terraform; we call those
+  recipes *templates*. I'll push a starter template now." Don't
+  belabor it; one sentence, then move on. When you mention
+  Terraform, name it as "the language Terraform uses to describe
+  cloud infrastructure" the first time. The glossary in the
+  "Talking to the user" section is the source of phrasings.
+- **familiar.** Skip the inline explanations. Use the Coder
+  terms directly. Don't gloss "template" or "workspace".
+
+Familiarity does not change the install path; it only changes
+the narration. Quick-start vs production, Docker vs Kubernetes,
+GitHub vs email, and every other technical decision is the same
+either way.
+
+If the user later asks "what's a template?" or "what's an
+agent?", switch to new-mode for that turn regardless of what
+they said earlier.
 
 #### Pick the deployment mode
 
@@ -645,20 +704,32 @@ disabled), fall back to the email-and-password path. Don't reach
 for the browser flow unless the user has a working browser on
 this machine and asked for it.
 
-When device flow is available, follow
+When device flow is available, drive it with the two scripts
+bundled in this skill:
+[`scripts/github-device-fetch.sh`](scripts/github-device-fetch.sh)
+and
+[`scripts/github-device-poll.sh`](scripts/github-device-poll.sh).
+**Run them as three separate tool calls**, with a chat message
+to the user between them. The full protocol, with rationale and
+failure modes, is in
 [`references/first-user-github-device.md`](references/first-user-github-device.md).
-**Run it as three separate tool calls**, with a chat message to
-the user between them:
 
-1. **Fetch.** One short shell command that primes the OAuth
-   cookies, fetches the device code, and writes
-   `$STATE_DIR/github-device.{jar,env}`. Returns in ~3 seconds.
-   Do NOT include the polling loop in this call; if you do, the
-   command sits for up to 15 minutes and the user never sees the
-   code.
+1. **Fetch.** One short shell command:
+
+   ```sh
+   ACCESS_URL="$ACCESS_URL" \
+     bash "$SKILL_DIR/scripts/github-device-fetch.sh"
+   ```
+
+   Returns in ~3 seconds. Writes
+   `$STATE_DIR/github-device.{jar,env}` and prints
+   `USER_CODE` / `VERIFY_URI` / `EXPIRES_IN` on stdout. Do NOT
+   include the polling loop in this call; if you do, the command
+   sits for up to 15 minutes and the user never sees the code.
 2. **Tell the user, in chat (not in a shell command).** Read
-   `$VERIFY_URI` and `$USER_CODE` from the env file, then send
-   the user a chat message like:
+   `$VERIFY_URI` and `$USER_CODE` from
+   `$STATE_DIR/github-device.env` (or from the fetch script's
+   stdout) and send the user a chat message like:
 
    > To sign in to Coder, open this on any device (your phone
    > is fine):
@@ -675,10 +746,26 @@ the user between them:
    Wait for the user's acknowledgement ("ok", "done", "entered
    it"). If they ask for a different sign-in method instead,
    abandon the device flow and switch to email-and-password.
-3. **Poll.** A separate shell command that runs the polling
-   loop until the callback returns 200, writes the session
-   token into `$CODER_CONFIG_DIR/{url,session}`, and verifies
-   with `coder whoami` and `coder users list`.
+3. **Poll.** A separate shell command:
+
+   ```sh
+   ACCESS_URL="$ACCESS_URL" \
+     bash "$SKILL_DIR/scripts/github-device-poll.sh"
+   ```
+
+   Loops until the user finishes on github.com, writes the
+   session token into `$CODER_CONFIG_DIR/{url,session}`, removes
+   the cookie jar / env / response scratch files (success or
+   failure), and verifies with `coder whoami` and
+   `coder users list`.
+
+`$SKILL_DIR` is the directory this `SKILL.md` is in. When the
+skill is installed via the marketplace it is something like
+`~/.claude/plugins/coder/skills/setup`; when run via
+`--plugin-dir` it is wherever the marketplace was pointed. The
+runner exposes the location through whichever variable it uses
+for skill paths; resolve it once and reuse the value across both
+calls.
 
 The reason for the split is that most agent tool runners buffer
 a shell command's stdout and only return it when the command
@@ -832,25 +919,38 @@ the user reads first; write it like a handoff, not a config
 dump. Substitute the actual values; don't print fields that
 don't apply.
 
-GitHub device-code path (already signed in by now):
+Before you write the message, decide which Logs and Stop
+command pair matches the actual install: host install with
+`server.log` / `server.pid`, Docker compose, systemd, or
+Kubernetes / Helm. Pick ONE pair. The angle-bracket
+`<one of: ...>` notation in the templates below is a hint to
+you, not text to copy. Resolve it to the one matching command
+before you show anything to the user.
+
+Do not refer to yourself or to "the skill" in any user-facing
+text. Speak in the first person about what was installed ("I
+installed Coder", "setup wrote ..."); never say "this skill"
+or "the setup skill".
+
+GitHub device-code path (already signed in by now). Example
+shown for a host install; pick one Logs / Stop pair that
+matches your install:
 
 ```text
 === Coder is ready ===
 
 You're signed in as the admin.
 
+Coder is running here as a host process. The binary is at
+$(command -v coder); its data lives in
+${CODER_CONFIG_DIR:-$HOME/.config/coderv2}.
+
 Open Coder in your browser:
   $ACCESS_URL
 
 To start, stop, or check on Coder later:
-  - Logs:  <one of: tail -f $STATE_DIR/server.log
-                  | docker compose logs -f coder
-                  | journalctl -u coder -f
-                  | kubectl logs -n coder deploy/coder -f>
-  - Stop:  <one of: kill $(cat $STATE_DIR/server.pid)
-                  | docker compose down
-                  | sudo systemctl stop coder
-                  | helm uninstall coder -n coder>
+  - Logs:  tail -f $STATE_DIR/server.log
+  - Stop:  kill $(cat $STATE_DIR/server.pid)
 
 What to try next:
 
@@ -870,12 +970,42 @@ What to try next:
       https://coder.com/docs/admin/networking/wildcard-access-url.md
       https://coder.com/docs/admin/provisioners.md
 
-The skill saved its working files in $STATE_DIR. Delete that
-directory to clean up everything the skill wrote here.
+Working files are in $STATE_DIR. Delete that directory to clean
+up what setup wrote here.
 ```
 
-Pick exactly one Logs and one Stop command (the one that matches
-how Coder is actually running). Don't print all four.
+For Docker compose, swap the "Coder is running" sentence and
+the Logs / Stop lines for:
+
+```text
+Coder is running in Docker on this machine. The compose file
+is at $STATE_DIR/docker-compose.yml.
+
+  - Logs:  docker compose -f $STATE_DIR/docker-compose.yml logs -f coder
+  - Stop:  docker compose -f $STATE_DIR/docker-compose.yml down
+```
+
+For systemd:
+
+```text
+Coder is running as a systemd service named `coder`.
+
+  - Logs:  journalctl -u coder -f
+  - Stop:  sudo systemctl stop coder
+```
+
+For Kubernetes / Helm:
+
+```text
+Coder is running in Kubernetes as the `coder` Helm release in
+the `coder` namespace.
+
+  - Logs:  kubectl logs -n coder deploy/coder -f
+  - Stop:  helm uninstall coder -n coder
+```
+
+Print exactly one "Coder is running" sentence, one Logs line,
+and one Stop line. Never paste the alternatives at the user.
 
 For the email-and-password path, replace the "You're signed in"
 line with the credentials block:
@@ -886,7 +1016,7 @@ Sign in at $ACCESS_URL with:
   Email:    $EMAIL
   Password: $PASSWORD
 
-These are saved to $STATE_DIR/credentials (mode 0600). Don't
+Setup wrote them to $STATE_DIR/credentials (mode 0600). Don't
 share that file.
 ```
 
@@ -901,15 +1031,15 @@ You'll be the admin once you finish.
 
 If the user mentioned (or might benefit from) Premium features
 like Workspace Proxies, groups, audit log retention, or template
-ACLs, mention they can request a license later. Don't drive that
-flow from the skill; it collects PII (name, phone, job title,
+ACLs, mention they can request a license later. Don't drive
+that flow yourself; it collects PII (name, phone, job title,
 company, country, dev count) and posts to the licensor:
 
 ```text
 If you ever want to try Premium features, request a license at
 https://coder.com/trial and add it under Settings -> Licenses
 (or `coder licenses add -f license.jwt`). You don't have to do
-this now, and the skill won't do it for you.
+this now, and I won't do it for you.
 ```
 
 End the handoff with a one-line offer:
@@ -964,16 +1094,39 @@ End the handoff with a one-line offer:
   `coder server` exit doesn't mean the API is up.
 - **Do not run `coder server` in a foreground that ties up the
   chat.** Background it and tail the log.
-- **Do not run the GitHub device-flow recipe as a single shell
-  command.** Tool runners buffer shell stdout until the command
-  exits. A combined fetch-and-poll prints the `user_code` early,
-  then enters a 15-minute polling loop, so the code sits in the
-  buffer until the loop times out and the user never sees it.
-  Run it as three separate tool calls: a short fetch that exits
-  after writing `$STATE_DIR/github-device.{jar,env}`, an agent
-  chat message that reads `VERIFY_URI` + `USER_CODE` from the
-  env file and asks the user to authorize, then a separate poll
-  command. See `references/first-user-github-device.md`.
+- **Do not run the GitHub device-flow scripts back to back in
+  one tool call.** Tool runners buffer shell stdout until the
+  command exits. A fetch immediately followed by a poll prints
+  the `user_code` early, then sits in a 15-minute polling loop,
+  so the code stays in the buffer until the loop times out and
+  the user never sees it. Run
+  `scripts/github-device-fetch.sh`, send the user a chat message
+  with the URL and code from `$STATE_DIR/github-device.env`,
+  wait for them to acknowledge, then run
+  `scripts/github-device-poll.sh` as a separate tool call. See
+  `references/first-user-github-device.md`.
+- **Do not inline the device-flow shell into the chat.** The
+  scripts under `scripts/` are the source of truth. Don't paste
+  their contents back into Phase 4 or copy fragments of them
+  inline; call them by path. Inlining drifts from the bundled
+  version on every change and skips the trap-based cleanup.
+- **Do not narrate "the skill" at the user.** They asked you to
+  install Coder; they didn't subscribe to the implementation.
+  Never say "this skill", "the setup skill", "I ran the skill",
+  or "the skill saved ...". Use first person about what was
+  installed ("I installed Coder", "setup wrote credentials to
+  ...") in every user-facing message and in the final handoff.
+- **Do not paste the `<one of: ...>` placeholders at the user.**
+  The angle-bracket alternatives in the Phase 7 templates are
+  notes to you. Pick the single command pair that matches how
+  Coder is actually running (host / Docker compose / systemd /
+  Kubernetes) before printing.
+- **Do not leave OAuth scratch files lying around.** The GitHub
+  device-flow recipe writes a cookie jar and an env file under
+  `$STATE_DIR/github-device.*`. Both step 1 and step 3 must
+  install `trap` cleanups; step 3 must always remove them on
+  exit, success or failure. They contain OAuth state and have
+  no value once the session token is captured.
 - **Do not disable telemetry on the user's behalf.** It defaults
   to on, and Coder strips PII before sending. The user can opt
   out themselves with `CODER_TELEMETRY_ENABLE=false`; don't ask
@@ -981,17 +1134,24 @@ End the handoff with a one-line offer:
 
 ## References
 
-This skill keeps two reference files. Everything else (OIDC,
-custom OAuth, GitLab, wildcard URL, TLS termination, external
-provisioners, template authoring, install layouts, upgrades) is
-on coder.com/docs and should be read from there.
+This skill keeps two reference files and two scripts. Everything
+else (OIDC, custom OAuth, GitLab, wildcard URL, TLS termination,
+external provisioners, template authoring, install layouts,
+upgrades) is on coder.com/docs and should be read from there.
 
 - [`references/first-user-github-device.md`](references/first-user-github-device.md):
-  the GitHub device-code flow recipe used in Phase 4. Bespoke,
-  not in upstream docs.
+  the GitHub device-code flow protocol used in Phase 4 (when to
+  use it, the three-tool-call structure, common failures).
+  Bespoke, not in upstream docs.
 - [`references/troubleshooting.md`](references/troubleshooting.md):
   skill-specific safety notes (never `pkill coder` on a Coder
   workspace, NixOS firewall on the docker bridge, the
   `host.docker.internal` loopback issue).
+- [`scripts/github-device-fetch.sh`](scripts/github-device-fetch.sh):
+  step 1 of the device flow. Primes the OAuth cookies, fetches
+  the device code, writes `$STATE_DIR/github-device.{jar,env}`.
+- [`scripts/github-device-poll.sh`](scripts/github-device-poll.sh):
+  step 3 of the device flow. Polls the callback, writes the
+  session, cleans up scratch files.
 
 For everything else, navigate <https://coder.com/docs/llms.txt>.
