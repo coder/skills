@@ -1,4 +1,4 @@
-# setup-coder skill tests
+# setup skill tests
 
 This skill is tested with [`claude -p`](https://docs.claude.com/en/docs/claude-code/headless)
 in non-interactive mode against a real Coder server provisioned via
@@ -26,7 +26,7 @@ The script:
 1. Spins a clean test directory under `$TMPDIR` (or `/tmp`).
 2. Invokes `claude -p` with `--plugin-dir` pointing at the marketplace
    in this repo.
-3. Asks Claude to drive the `setup-coder` skill.
+3. Asks Claude to drive the `setup` skill.
 4. Independently verifies the server, admin user, template, and
    workspace via the Coder REST API.
 5. Prints `PASS` or `FAIL`.
@@ -79,7 +79,7 @@ Manual verification recipe (against a real cluster you control):
 
    ```sh
    claude --plugin-dir . --permission-mode bypassPermissions \
-     "Use setup-coder to deploy Coder on Kubernetes at \
+     "Use setup to deploy Coder on Kubernetes at \
       https://coder.example.com with wildcard *.coder.example.com, \
       TLS via cert-manager, GitHub external auth (OAuth App client \
       ID and secret in $GITHUB_CLIENT_ID / $GITHUB_CLIENT_SECRET), \

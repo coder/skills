@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test for the setup-coder skill.
+# End-to-end test for the setup skill.
 #
 # Drives `claude -p` with the marketplace in this repo and verifies the
 # resulting Coder deployment via the REST API. Designed to be safe to
@@ -25,7 +25,7 @@ TEMPLATE_NAME="docker"
 WORKSPACE_NAME="demo"
 TIMEOUT_SECONDS="${CODER_TEST_TIMEOUT:-1500}"
 
-WORKDIR="$(mktemp -d -t setup-coder-e2e.XXXXXX)"
+WORKDIR="$(mktemp -d -t coder-setup-e2e.XXXXXX)"
 TESTDIR="$WORKDIR/coder-test"
 FAKE_HOME="$WORKDIR/home"
 mkdir -p "$TESTDIR" "$FAKE_HOME/.config"
@@ -56,8 +56,8 @@ fi
 
 PROMPT_FILE="$WORKDIR/prompt.txt"
 cat > "$PROMPT_FILE" <<EOF
-You are testing the setup-coder skill end-to-end. You MUST use the
-setup-coder skill. Follow every phase. Do not deviate.
+You are testing the setup skill end-to-end. You MUST use the
+setup skill. Follow every phase. Do not deviate.
 
 Constraints:
 

@@ -11,7 +11,7 @@ distributes one or more skills targeted at Coder operators and users.
 
 | Skill                                                | What it does                                                                                                                                                                                                                                                          |
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`setup-coder`](skills/setup-coder/SKILL.md)     | End-to-end install and first-run setup for a Coder deployment without using the web UI. Handles trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Wraps `install.sh`, drives `coder login --first-user-*` for non-interactive admin bootstrap, pushes a starter template, and (optionally) creates a first workspace. |
+| [`setup`](skills/setup/SKILL.md) (`/coder:setup`) | End-to-end install and first-run setup for a Coder deployment without using the web UI. Handles trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Wraps `install.sh`, drives `coder login --first-user-*` for non-interactive admin bootstrap, pushes a starter template, and (optionally) creates a first workspace. |
 
 ## Install
 
@@ -20,7 +20,7 @@ plugins from it:
 
 ```text
 /plugin marketplace add coder/skills
-/plugin install setup-coder@coder-skills
+/plugin install coder@coder-skills
 ```
 
 After installing, the skill activates automatically when you ask
@@ -48,7 +48,7 @@ checkout with `--plugin-dir`:
 claude -p \
   --plugin-dir /path/to/skills \
   --permission-mode bypassPermissions \
-  "Use the setup-coder skill to install Coder via Docker compose, \
+  "Use the setup skill to install Coder via Docker compose, \
    bootstrap an admin user, push the docker starter template, and \
    create one workspace named demo."
 ```

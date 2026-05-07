@@ -1,9 +1,9 @@
 ---
-name: setup-coder
+name: setup
 description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both trial setups (localhost or Docker, no TLS) and production setups (real domain, wildcard URL, TLS, GitHub external auth, external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup, optionally registers external auth and an external provisioner, pushes a starter template, and (optionally) creates a first workspace.
 ---
 
-# setup-coder
+# setup
 
 End-to-end install and first-run setup for a Coder deployment without
 ever opening the Coder web UI.
