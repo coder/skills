@@ -183,9 +183,7 @@ your tool calls economical:
     already covered in Phase 4.
   - `references/coder-agents.md` is only relevant when the
     Phase 7 user accepts the Coder Agents offer. Read it then,
-    not before. If they decline (or you never make the offer
-    because the server is older than 2.33.1), skip the file
-    entirely.
+    not before. If they decline, skip the file entirely.
   - `references/troubleshooting.md` is only relevant when
     something is actually stalled (see the bullet below).
 
@@ -1346,52 +1344,27 @@ The trial signup collects some company info, so I'll leave
 that part to you.
 ```
 
-**Always offer to set up Coder Agents at the end of the
-handoff.** Coder Agents is the self-hosted chat surface where
-developers describe work and Coder picks a template, spins up
-a workspace, and runs an agent against a configured LLM
-provider. It's a distinct product from "templates" or
-"workspaces" and a primary reason a lot of teams adopt Coder.
-A fresh user usually doesn't know it exists; surface it.
-
-Two prerequisites:
-
-- Server version is **2.33.1 or greater**. Check
-  `/api/v2/buildinfo`. If the deployment is older, do not
-  bring up Coder Agents; offer to upgrade first instead.
-- The user is the Owner of the deployment (which they are by
-  the time Phase 7 runs).
-
-The pitch is short. Two beats: what it is, do you want it. Do
-not paste a docs link.
+**Mention Coder Agents at the end of the handoff.** Coder
+Agents is the built-in chat that runs AI coding agents inside
+the deployment, against a configured LLM provider. A fresh
+user usually doesn't know it's there. One short line is
+enough; don't pitch it.
 
 ```text
-One more thing before I let you go: this version of Coder ships
-with Coder Agents, a built-in chat that runs AI coding agents
-inside your deployment. You describe what you want done, Coder
-picks a template, spins up a workspace, and the agent does the
-work (read files, run commands, edit code) while you watch.
-It's self-hosted, so the LLM key and the chat history both
-stay on your infrastructure.
-
-To turn it on I'd plug your API key into Coder, configure the
-latest flagship model from your provider as the default
-(Anthropic's Opus or OpenAI's latest GPT, etc.), and verify
-the loop works. Anthropic, OpenAI, Google, Azure OpenAI, AWS
-Bedrock, OpenRouter, and any OpenAI-compatible endpoint are
-supported. About 2 minutes once you've got a key. Want me to
-set it up?
+One more thing: Coder has a built-in agents UI that runs AI
+coding agents inside your deployment against your own LLM key.
+Want me to wire it up?
 ```
 
 If the user says yes, follow
 [`references/coder-agents.md`](references/coder-agents.md). It
-documents the full six-step recipe: pick provider, take key,
-look up the live API surface from `/swagger/doc.json`, create
-the provider, create the flagship model and mark it default,
-grant the Coder Agents User role, verify with
-`GET /api/experimental/chats/models`. Don't read that file
-unless the user actually wants Agents wired up; the rest of
-this skill never needs it.
+documents the full six-step recipe: pick provider, take key
+(via env var, never pasted in chat), look up the live API
+surface from `/swagger/doc.json`, create the provider, create
+the flagship model and mark it default, grant the Coder Agents
+User role, verify with `GET /api/experimental/chats/models`.
+Don't read that file unless the user actually wants Agents
+wired up; the rest of this skill never needs it.
 
 **Closing offer.** End the handoff with one short,
 plain-English line. Don't list topic URLs at the user; the
@@ -1463,6 +1436,15 @@ which defeats the purpose of having installed the skill.
 - **Do not echo cloud credentials, OAuth client secrets,
   provisioner keys, or the admin password back to the user.**
   Confirm receipt with `[set]` or a redacted form.
+- **Do not ask the user to paste an LLM API key into chat.**
+  Chat transcripts and shell history persist; a key dropped
+  inline is leaked the moment the user says "send this log to
+  support." Have them export it in their shell first (`read -s
+  LLM_KEY` or `export LLM_KEY=...`) and then read `$LLM_KEY`
+  from your environment without ever printing it. If a user
+  pastes anyway, accept the value, finish the setup, and tell
+  them in the handoff to rotate the key on the provider's
+  dashboard.
 - **Do not opt the user into the upstream enterprise-trial
   license flow unless they explicitly asked.** Always pass
   `--first-user-trial=false` to `coder login` and never set
@@ -1549,8 +1531,7 @@ its trigger condition fires; never read all three eagerly.
   the six-step recipe for wiring Coder Agents (LLM provider +
   flagship model + role + verification) at the end of Phase 7.
   Trigger: the user accepts the Phase 7 Coder Agents offer.
-  Skip entirely if the server is older than 2.33.1 or the user
-  declines.
+  Skip entirely if the user declines.
 - [`references/troubleshooting.md`](references/troubleshooting.md):
   skill-specific gotchas not in the upstream docs. Covers the
   workspace-host guard, NixOS firewall on the docker bridge,

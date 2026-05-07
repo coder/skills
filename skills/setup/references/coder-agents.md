@@ -9,19 +9,13 @@ coding agents directly inside the Coder control plane:
 developers describe work, Coder picks a template, provisions a
 workspace, and executes the task using a configured LLM provider
 (Anthropic, OpenAI, Google, Azure, Bedrock, OpenRouter, etc.).
-It's a distinct product surface from "templates" and
-"workspaces" and is the primary reason a lot of teams adopt
-Coder in the first place. Don't conflate it with the workspace
-agent (the small `coder` process that runs inside a workspace).
+Don't conflate it with the workspace agent (the small `coder`
+process that runs inside a workspace).
 
 ## Prerequisites
 
 Confirm before you start:
 
-- Server version is **2.33.1 or greater**. Read it from
-  `coder version --output json` or the `/api/v2/buildinfo`
-  response. If the deployment is older, do not configure Coder
-  Agents; tell the user the deployment needs to upgrade first.
 - The calling user is an Owner of the deployment, or has
   another role with `chat:create`-equivalent permissions. The
   first user from Phase 4 is always Owner.
@@ -33,30 +27,18 @@ Confirm before you start:
 
 ## When to offer it (Phase 7)
 
-In the Phase 7 handoff, after the rest of the install is done,
-always offer Coder Agents in plain English. Two beats: what it
-is, do you want it. Do not paste a docs link.
+At the end of the Phase 7 handoff, surface Coder Agents in one
+short line. Don't pitch it; the user can ask for more if they
+want it.
 
 ```text
-One more thing before I let you go: this version of Coder ships
-with Coder Agents, a built-in chat that runs AI coding agents
-inside your deployment. You describe what you want done, Coder
-picks a template, spins up a workspace, and the agent does the
-work (read files, run commands, edit code) while you watch.
-It's self-hosted, so the LLM key and the chat history both
-stay on your infrastructure.
-
-To turn it on I'd plug your API key into Coder, configure the
-latest flagship model from your provider as the default
-(Anthropic's Opus or OpenAI's latest GPT, etc.), and verify
-the loop works. Anthropic, OpenAI, Google, Azure OpenAI, AWS
-Bedrock, OpenRouter, and any OpenAI-compatible endpoint are
-supported. About 2 minutes once you've got a key. Want me to
-set it up?
+One more thing: Coder has a built-in agents UI that runs AI
+coding agents inside your deployment against your own LLM key.
+Want me to wire it up?
 ```
 
 If they say yes, follow the six steps below without further
-back-and-forth except for the API key paste.
+back-and-forth except for the API key handoff in Step 1.
 
 ## Step 1: pick the provider and take the key
 
@@ -88,13 +70,53 @@ If the user picks Other, ask which one in a follow-up
 `AskUserQuestion` (Google / Azure OpenAI / AWS Bedrock /
 OpenRouter / Vercel AI Gateway / OpenAI-compatible endpoint).
 
-Then ask in plain English for the API key (or, for AWS
-Bedrock, ask whether they want bearer-token mode or ambient
-AWS credentials per
-<https://coder.com/docs/ai-coder/agents/models.md#configuring-aws-bedrock>).
-Confirm receipt with `[set]`; **never echo the value back** in
-the chat or the shell. Pass it through environment variables
-in the curl below, never on the command line.
+### Take the API key without leaking it into chat history
+
+Chat transcripts and shell history are durable. An API key
+pasted as plain text in this chat will live in the
+conversation log (and any support bundles or transcripts the
+user later shares) until they rotate it. Do not ask the user
+to paste the key in chat. Instead:
+
+1. Tell the user in one sentence to set the key in their
+   shell **before** continuing, naming the env var you'll
+   read from. The recommended name is `LLM_KEY` (provider-
+   neutral); a provider-named alias like `ANTHROPIC_API_KEY`
+   or `OPENAI_API_KEY` is also fine.
+
+   ```text
+   Before I run the next command, paste this in the same
+   shell where I'm running:
+
+     read -s LLM_KEY && export LLM_KEY
+
+   Hit Enter, paste the key (it won't echo), Enter again.
+   Then tell me "set" and I'll keep going.
+   ```
+
+   `read -s` keeps the value off the terminal and out of
+   `~/.bash_history` (`read` does not write to history).
+   `export LLM_KEY=...` on the command line works too but
+   leaves the value in shell history; mention `read -s` first.
+
+2. When the user confirms, read `$LLM_KEY` from the
+   environment in the curl below. Never print it, never
+   interpolate it into a logged command line, never write it
+   to a file outside `${XDG_STATE_HOME:-$HOME/.local/state}`.
+3. Confirm receipt with `[set]`. Don't echo the value, the
+   length, or any prefix.
+
+If the user pastes the key into chat anyway despite the above
+(it happens), accept it, finish the setup, and add a note to
+the handoff: "the key is in this conversation's transcript;
+rotate it on the provider's dashboard when you have a
+minute." Don't lecture them about it mid-flow.
+
+For AWS Bedrock with ambient AWS credentials there is no key
+to take; ask whether they want bearer-token mode or ambient
+mode per
+<https://coder.com/docs/ai-coder/agents/models.md#configuring-aws-bedrock>
+and skip the env var step in that case.
 
 ## Step 2: confirm the API surface against the live server
 
@@ -192,7 +214,7 @@ Anthropic / Opus the body looks like:
 {
   "provider": "anthropic",
   "model": "claude-opus-4-7",
-  "display_name": "Opus (default)",
+  "display_name": "Opus",
   "enabled": true,
   "is_default": true,
   "context_limit": 1000000,
@@ -216,7 +238,7 @@ For OpenAI / GPT it looks like:
 {
   "provider": "openai",
   "model": "gpt-5.5",
-  "display_name": "GPT-5 (default)",
+  "display_name": "GPT-5",
   "enabled": true,
   "is_default": true,
   "context_limit": 272000,
