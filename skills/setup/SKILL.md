@@ -194,6 +194,15 @@ your tool calls economical:
   `coder create` all take a while; tail their logs from a
   state-dir file rather than blocking the chat on their
   stdout.
+- When something stalls (server won't come up, provisioner
+  can't reach Docker, certificates won't issue, the apex
+  doesn't resolve), check `references/troubleshooting.md`
+  before you start diagnosing from scratch. The five recurring
+  failure modes documented there (embedded Postgres on ARM,
+  bundled Terraform's PGP key, fresh Docker group not picked
+  up by the running server, Caddy redirect loops, home-router
+  rebind protection) are not in upstream docs and have known
+  fixes.
 
 1. **Discover.** Ask the user a small set of questions in plain
    English. Probe the host afterward to fill in defaults.
@@ -536,23 +545,110 @@ use a local checkout.
   URL only if the auto-tunnel can't initialize (offline host)
   or the user asks. Phase 3 has the detection recipe.
 
-**Production mode.** You need a few things from the user before
-touching anything. Ask in plain English; don't make them recite
-a config file.
+**Production mode.** Production needs more answers than
+quick-start. Drive them through a single `AskUserQuestion`
+call after the user answers question 2 with "For my team":
 
-- **The web address people will open.** Mandatory.
-  > "What address should everyone open in their browser to use
-  > Coder? Something like `coder.yourcompany.com`."
-- **Who handles HTTPS.** Either Coder itself or a proxy /
-  ingress in front of it. Lead with the user's existing setup if
-  spotted (cert-manager, nginx, Caddy).
-- **Database.** Coder needs a Postgres for production.
-  > "Do you have a Postgres I can point Coder at? If yes, I'll
-  > need its connection string."
-- **What kind of dev environments.** Maps to the example project
-  you'll add. Linux container in Docker, Kubernetes pod, or a
-  cloud VM. The list of starter templates is at
-  <https://coder.com/docs/admin/templates.md>.
+```json
+{
+  "questions": [
+    {
+      "question": "What domain should people open in their browser to use Coder?",
+      "header": "Domain",
+      "multiSelect": false,
+      "options": [
+        {"label": "I have a subdomain in mind", "description": "e.g. coder.example.com. I'll ask which one next."},
+        {"label": "Use a Tailscale name (tailnet-only)", "description": "Reachable only inside your tailnet; no public DNS or cert."},
+        {"label": "Localhost / IP for now", "description": "Skip the domain; revisit once you have one."}
+      ]
+    },
+    {
+      "question": "How do you want HTTPS handled?",
+      "header": "HTTPS",
+      "multiSelect": false,
+      "options": [
+        {"label": "Caddy in front", "description": "Recommended. Auto-renews Let's Encrypt certs."},
+        {"label": "Existing reverse proxy", "description": "nginx, traefik, cert-manager, etc.; I'll generate a config and you slot it in."},
+        {"label": "Coder terminates TLS itself", "description": "Single-binary install with cert files I'll point Coder at."},
+        {"label": "No TLS", "description": "Tailnet-only or other private network where TLS isn't required."}
+      ]
+    },
+    {
+      "question": "Want a wildcard subdomain for in-workspace apps?",
+      "header": "Wildcard",
+      "multiSelect": false,
+      "options": [
+        {"label": "Yes, set it up", "description": "Workspace port-forwarded apps get their own *.coder.example.com URL."},
+        {"label": "No, skip it", "description": "You can add it later if you start using port-forwarded apps."}
+      ]
+    },
+    {
+      "question": "Run Coder under systemd so it auto-starts on reboot?",
+      "header": "Service",
+      "multiSelect": false,
+      "options": [
+        {"label": "Yes", "description": "Recommended for any production deployment."},
+        {"label": "No, foreground for now", "description": "I'll just background it; you can wire systemd later."}
+      ]
+    }
+  ]
+}
+```
+
+Then the database question, separately so the user can paste a
+connection string in plain text without a picker getting in
+the way:
+
+> "Coder needs a Postgres in production. Do you have one I can
+> point at, or want me to install Postgres on this host? If you
+> have one, paste the connection string
+> (`postgres://user:pass@host:5432/db?sslmode=...`)."
+
+Follow-ups, also one chat at a time:
+
+- If the user picked **Caddy in front** with a real domain,
+  ask which DNS provider hosts the zone (Cloudflare, Route 53,
+  etc.) so the wildcard cert can use DNS-01. The provider's
+  API token is a separate paste; confirm `[set]` and never
+  echo it back.
+- If the user picked **a Tailscale name**, mention up front
+  that you'll need Tailscale split-DNS configured for the
+  apex to resolve from non-tailnet contexts (workspace
+  containers in particular). See
+  `references/troubleshooting.md` if you hit it.
+
+For what kind of dev environments to push, reuse the question
+5 mapping from the quick-start interview; production answers
+the same question.
+
+**If quick-start state already exists on this host** (a prior
+run of this skill left `~/.local/state/coder-install` and / or
+`~/.config/coderv2-quickstart`), do not assume the user wants
+it kept. Ask once with `AskUserQuestion` whether to remove the
+quick-start tunnel server and its isolated config dir before
+starting the production install:
+
+```json
+{
+  "questions": [
+    {
+      "question": "I see a quick-start Coder running on this machine. Want me to take it down before I bring up production?",
+      "header": "Quick-start state",
+      "multiSelect": false,
+      "options": [
+        {"label": "Take it down and clean up", "description": "Stop the tunnel server, delete ~/.local/state/coder-install and ~/.config/coderv2-quickstart."},
+        {"label": "Take it down but keep the files", "description": "Stop the server; leave the state for me to inspect later."},
+        {"label": "Leave it running", "description": "Two Coder servers on one host; production still goes up under different config."}
+      ]
+    }
+  ]
+}
+```
+
+Whatever the user picks, never `pkill coder`; use the PID
+file in `$STATE_DIR/server.pid` (or the relevant systemd /
+compose / helm command) so you don't kill an unrelated
+`coder` process.
 
 For configuration topics that don't all production deployments
 need (wildcard DNS for in-workspace apps, custom GitHub / GitLab
@@ -1238,13 +1334,77 @@ The trial signup collects some company info, so I'll leave
 that part to you.
 ```
 
-End the handoff with one short, plain-English offer. Don't list
-topic URLs at the user; the agent (you) does the work, the
-user just says yes:
+**Always offer to set up Coder Agents at the end of the
+handoff.** Coder Agents is a self-hosted chat interface for
+running AI coding agents directly inside the Coder control
+plane: developers describe work and Coder picks a template,
+provisions a workspace, and executes the task using a
+configured LLM provider (Anthropic, OpenAI, Google, Azure,
+Bedrock, OpenRouter, etc.). It's a distinct product surface
+from "templates" or "workspaces" and is the primary reason a
+lot of teams adopt Coder in the first place. The fresh user
+likely doesn't know it exists; mention it.
 
-> "Want me to set up sign-in with Okta / Entra / Google, GitLab,
-> a custom domain, or a different kind of dev environment
-> next? Just say which one and I'll handle it."
+Requirements before you offer:
+
+- Server version is **2.33.1 or greater**. Read it from
+  `coder version --output json` or the `/api/v2/buildinfo`
+  response. If the deployment is older, do not bring up Coder
+  Agents; offer to upgrade first instead.
+- The user is the Owner of the deployment (which they are by
+  the time Phase 7 runs).
+
+The pitch is short. Two beats: what it is, do you want it.
+Do not paste a docs link.
+
+```text
+One more thing before I let you go: this version of Coder ships
+with Coder Agents, a built-in chat that runs AI coding agents
+inside your deployment. You describe what you want done, Coder
+picks a template, spins up a workspace, and the agent does the
+work (read files, run commands, edit code) while you watch.
+It's self-hosted, so the LLM key and the chat history both
+stay on your infrastructure.
+
+To turn it on I'd need an LLM provider key (Anthropic, OpenAI,
+Google, Azure OpenAI, AWS Bedrock, OpenRouter, or any
+OpenAI-compatible endpoint). I'd plug it in, set a default
+model, grant your account the Coder Agents User role, and run
+a first prompt to confirm it works. About 5 minutes total.
+Want me to set it up?
+```
+
+If the user says yes, follow these steps without prompting
+further unless something blocks:
+
+1. Ask which provider they have a key for, in plain English
+   ("Anthropic, OpenAI, something else?"). Use
+   `AskUserQuestion` with the supported providers as options.
+   Then ask them to paste the key. Confirm receipt with
+   `[set]`; never echo the value back.
+2. Configure the provider and a default model through the
+   admin API. The provider/model schemas live at
+   <https://coder.com/docs/ai-coder/agents/models.md>; read
+   that doc when the user picks a provider, and apply the
+   matching POST.
+3. Grant the calling user the `agents-access` org role
+   (preserving their existing roles).
+4. Send one starter prompt through the Agents API to confirm
+   the loop works ("What templates are available in this
+   deployment?" is a no-workspace prompt, so it returns fast).
+
+If any step fails, tell the user in one sentence and offer to
+fall back ("the LLM key didn't authenticate against
+Anthropic's API; want to try a different one?"). Don't dump
+stack traces.
+
+**Closing offer.** End the handoff with one short,
+plain-English line. Don't list topic URLs at the user; the
+agent (you) does the work, the user just says yes:
+
+> "Anything else? OIDC sign-in, GitLab, a custom domain, a
+> different kind of dev environment, or that Coder Agents
+> setup? Just tell me which."
 
 Do not include `.md` documentation links, raw file paths to
 upstream docs, or `coder.com/docs/...` URLs in any of the
@@ -1386,9 +1546,13 @@ upgrades) is on coder.com/docs and should be read from there.
   use it, the three-tool-call structure, common failures).
   Bespoke, not in upstream docs.
 - [`references/troubleshooting.md`](references/troubleshooting.md):
-  skill-specific safety notes (never `pkill coder` on a Coder
-  workspace, NixOS firewall on the docker bridge, the
-  `host.docker.internal` loopback issue).
+  skill-specific gotchas not in the upstream docs. Covers the
+  workspace-host guard, NixOS firewall on the docker bridge,
+  the `host.docker.internal` loopback issue, embedded Postgres
+  failing on ARM, the bundled Terraform installer's PGP key,
+  fresh Docker group not picked up by the running server,
+  Caddy redirect loops in front of Coder, and home-router DNS
+  rebind protection on tailnet apex names.
 - [`scripts/github-device-fetch.sh`](scripts/github-device-fetch.sh):
   step 1 of the device flow. Primes the OAuth cookies, fetches
   the device code, writes `$STATE_DIR/github-device.{jar,env}`.
