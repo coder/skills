@@ -1,37 +1,25 @@
 ---
 name: setup
 description: |
-  Install and bootstrap a Coder (coder/coder) deployment end-to-end from
-  the CLI without using the web UI. Covers quick-start setups (one
-  machine, auto-tunnel URL) and production setups (real domain, TLS,
-  optional wildcard, optional custom OAuth, optional external
-  provisioner). Wraps install.sh, drives the GitHub device-code flow on
-  fresh deployments to sign the first admin in without a browser on the
-  install machine, falls back to a generated email and password for
-  fully scripted setups, pushes a starter template, and optionally
-  creates a first workspace. Defers per-topic configuration (OIDC,
-  custom OAuth, GitLab, external provisioners, wildcard URL, TLS
-  strategy, template authoring) to https://coder.com/docs/.
+  Install and bootstrap a Coder (coder/coder) deployment end-to-end
+  from the CLI without the web UI. Covers quick-start (one machine,
+  auto-tunnel URL) and production (real domain, TLS, wildcard, OIDC,
+  external provisioner). Drives GitHub device-code on fresh
+  deployments to sign the first admin in without a browser, falls back
+  to email/password for scripted runs, pushes a starter template, and
+  optionally creates a first workspace.
 
-  Activate this skill when the user says any of: "install Coder", "set
-  up Coder", "deploy Coder", "get me started with Coder", "bootstrap
-  Coder", "stand up Coder for my team", "run Coder on this machine",
-  "run Coder in Docker", "deploy Coder on Kubernetes / Helm / a
-  cluster", "Coder on AWS / GCP / Azure / DigitalOcean / a VM", "put
-  Coder behind HTTPS", "behind Caddy / nginx / cert-manager", "with a
-  wildcard domain", "with TLS / Let's Encrypt", "I don't want to touch
-  the UI", "do it from the terminal", "headless setup",
-  "non-interactive first-user setup", "create the first admin user
-  from the CLI", "push a starter template", "create my first
-  workspace". Also activate for the slash command `/coder:setup`.
+  Activate when the user says: "install Coder", "set up Coder",
+  "deploy Coder", "bootstrap Coder", "run Coder in Docker / on
+  Kubernetes / on a VM", "Coder on AWS / GCP / Azure", "put Coder
+  behind HTTPS / Caddy / nginx / cert-manager", "wildcard domain",
+  "headless / non-interactive setup", "create the first admin from the
+  CLI", "push a starter template", or "create my first workspace".
+  Also activate for /coder:setup.
 
   Do NOT activate for upgrading an existing deployment, editing an
-  existing template, debugging an already-running server, configuring
-  OIDC / GitLab / custom OAuth on a deployment that's already up, or
-  any task that assumes Coder is already installed. Point the user at
-  https://coder.com/docs/install/upgrade.md, the relevant
-  https://coder.com/docs/admin/* page, or
-  https://coder.com/docs/support.md for those.
+  existing template, debugging a running server, or configuring OIDC /
+  custom OAuth on a running deployment.
 ---
 
 # setup
