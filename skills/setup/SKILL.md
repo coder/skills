@@ -87,7 +87,7 @@ Examples of the same question in DevOps voice vs user voice:
 | "Pick a deployment mode: trial or production."| "Are you trying Coder out, or setting it up for your team to use long-term?"                     |
 | "Provide an access URL."                      | "What address should people open in their browser to use this? (Like `coder.yourcompany.com`.)" |
 | "Configure the wildcard access URL."          | "Some apps inside workspaces work better if Coder gets a wildcard DNS record. Want me to set that up, or skip it?" |
-| "First-user auth: GitHub or password?"        | "To sign in, do you want to click a 'Sign in with GitHub' button, or use an email and password I'll generate for you?" |
+| "First-user auth: GitHub or password?"        | "For sign-in, do you want me to walk you through GitHub (I'll print a short URL and a code; works from any phone), or just create an email and password for you?" |
 | "Register an external auth provider."         | "Should workspaces be able to clone your private GitHub repos? (yes / no / not sure)"            |
 | "Push the docker starter template."           | "I'll set up an example project that builds Linux workspaces in Docker. OK?"                     |
 | "Workspace agent reached lifecycle=ready."    | "Your first workspace is up and ready to open."                                                  |
@@ -233,33 +233,44 @@ production.
 
 #### Pick how the user will sign in
 
-Fresh deployments come with a "Sign in with GitHub" button on the
-login page already turned on, using a GitHub OAuth App that Coder
-hosts. Whoever signs in first becomes the admin (Coder calls this
-the Owner) automatically. So there are two reasonable paths:
+Fresh deployments come with a built-in "Sign in with GitHub" path
+turned on, using a GitHub OAuth App that Coder hosts. Whoever
+signs in first becomes the admin (Coder calls this the Owner)
+automatically. So there are two reasonable paths:
 
-- **GitHub button.** The user opens the sign-in page in a browser
-  once, clicks "Continue with GitHub", and is the admin. Nothing
-  to write down. Best for solo trials, demos, and small teams
-  whose accounts already live on GitHub. Skill skips the scripted
-  account-creation step entirely.
-- **Email and password.** Fully scripted, no browser needed. The
-  skill picks a strong password, creates the admin account from
-  the terminal, and saves the email and password to a file at
+- **GitHub.** Drive GitHub's standard device-code flow over
+  Coder's API. The skill prints a short URL and an 8-character
+  code; the user opens the URL on whatever device is handy
+  (their phone is fine), pastes the code, approves access on
+  GitHub, and the skill captures the session and finishes setup.
+  No browser on the install machine, no password to record.
+  Best for solo trials, demos, and small teams whose accounts
+  already live on GitHub.
+- **Email and password.** Fully scripted, no GitHub round trip.
+  The skill picks a strong password, creates the admin account
+  from the terminal, and saves the email and password to
   `~/.config/coder-install/credentials` (readable only by the
   current user) so the user can find them later.
 
 Ask the user once. Phrase it without jargon:
 
-> "To sign in to Coder, do you want to click a 'Sign in with
-> GitHub' button (easiest, needs a browser), or have me create an
-> email and password for you (works without a browser)?"
+> "For sign-in, do you want me to walk you through GitHub (I'll
+> show you a short URL and a code to paste; works from any
+> phone), or just create an email and password for you?"
 
-Default to GitHub when the user will reach the sign-in page in a
-browser on the same machine you're installing on; fall back to
-email-and-password if they say no, ask for a fully scripted setup,
-or you're running in headless mode (`claude -p`) where there's no
-human to click the button.
+Default to GitHub when the user can reach github.com on any
+device. Fall back to email-and-password if they say no, ask for
+a fully scripted setup, or you're running in headless mode
+(`claude -p`) where there's no human to type a code.
+
+Note that the device-code path only works on deployments where
+the Coder server has device flow enabled for its GitHub provider.
+Fresh deployments do (Coder's hosted OAuth App ships with
+`device_flow=true`); custom-configured GitHub providers may not.
+The skill checks `default_provider_configured` and the
+`/users/oauth2/github/device` endpoint in Phase 4 before driving
+the flow, and falls back to email-and-password if either check
+says no.
 
 For the email-and-password path, prefill the email from git config
 if present, instead of asking cold:
@@ -565,12 +576,78 @@ Whoever signs in to a fresh Coder first becomes the admin (Owner)
 automatically. Pick the path that matches what the user said in
 Phase 1.
 
-#### GitHub path (browser)
+#### GitHub path (device code, no browser on this machine)
 
-The sign-in page already has a "Sign in with GitHub" button. The
-user clicks it once, approves access on GitHub, and they're the
-admin. Tell them this in plain English; don't reference "OAuth
-apps" or "the dashboard" unless they ask:
+Drive the GitHub sign-in over GitHub's standard device flow,
+proxied through Coder's API. The user gets a short URL and a
+one-time code, types the code into the GitHub page on whatever
+device is handy (their phone is fine), and the install completes
+without opening a browser on the install machine and without
+asking them for credentials. Don't tell the user to "go to the
+dashboard and click Sign in with GitHub"; that's a fallback for
+deployments where device flow isn't available.
+
+First, confirm the deployment can do device flow. The default
+GitHub provider that ships with fresh deployments has it on; a
+custom provider may not.
+
+```sh
+curl -fsS "$ACCESS_URL/api/v2/users/authmethods" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["github"].get("default_provider_configured", False))'
+curl -fsS "$ACCESS_URL/api/v2/users/oauth2/github/device" >/dev/null
+```
+
+If either check fails (`default_provider_configured` is `False`,
+or the device endpoint returns `Device flow is not enabled`),
+fall back to the email-and-password path below; don't reach for
+the browser flow unless the user has a working browser on this
+machine and asked for it.
+
+When device flow is available, run the recipe in
+[`references/first-user-github-device.md`](references/first-user-github-device.md).
+Follow it end-to-end; it handles cookie priming, polling,
+`authorization_pending`, and writing the session into
+`$CODER_CONFIG_DIR/{url,session}` so subsequent `coder` commands
+are authenticated as the admin.
+
+While the device endpoint is responding, print this to the user
+(substitute `$VERIFY_URI` and `$USER_CODE` from the device-endpoint
+response, not from the recipe; both come straight from GitHub):
+
+```text
+To sign in to Coder, open this on any device:
+
+  $VERIFY_URI
+
+Then enter this code:
+
+  $USER_CODE
+
+I'll wait here. As soon as GitHub confirms it, I'll finish setting
+you up as the admin.
+```
+
+Then poll. The user typically takes 20-60 seconds; the code is
+good for 15 minutes.
+
+When the recipe returns success, verify quietly:
+
+```sh
+coder whoami
+coder users list
+```
+
+`users list` should show exactly one row with `OWNER` in the
+roles column, with the email and login from the user's GitHub
+account. If it doesn't, tell the user in one line that GitHub
+sign-in didn't take and offer to try email-and-password instead;
+don't paste raw output.
+
+#### GitHub path (browser fallback)
+
+Use this only when the device-flow check above failed AND the
+user has a browser on the install machine. The sign-in page has a
+"Sign in with GitHub" button; tell them to click it.
 
 ```text
 Coder is ready. Open this address in your browser:
@@ -583,25 +660,15 @@ you to write down.
 ```
 
 While the user does that, link your terminal to the same
-deployment so the rest of the install (adding an example project,
-building their first dev environment) can run as admin:
+deployment so the rest of the install can run as admin:
 
 ```sh
 coder login "$ACCESS_URL"
 ```
 
 This pops a browser to the same address; the user signs in once,
-and the terminal grabs a session token. Verify quietly:
-
-```sh
-coder whoami
-coder users list
-```
-
-`users list` should show exactly one row with `OWNER` in the
-roles column, with the email or login from GitHub. If it doesn't,
-stop and tell the user something went wrong with the GitHub sign
-in. Don't paste raw output; say what's wrong in one line.
+and the terminal grabs a session token. Verify with `coder
+whoami` and `coder users list` (one row, `OWNER`).
 
 #### Email and password path (no browser)
 
@@ -862,16 +929,38 @@ terminal, so write it like a handoff, not a config dump. Use plain
 labels ("Open in your browser", not "Access URL"), and only show
 fields that apply this run.
 
-If the user signed in with the **GitHub button**:
+If the user signed in via the **GitHub device-code flow** (already
+signed in by the time we reach this phase):
+
+```text
+=== Coder is ready ===
+
+You're signed in as the admin.
+
+Open Coder in your browser whenever you want:
+  $ACCESS_URL
+
+Your first dev environment:  $WORKSPACE_NAME
+  (or: skipped, you can create one from the home page)
+
+If you want to add more dev environments later, you'll use the
+example project named "$TEMPLATE_NAME" that's already set up.
+
+When you want to stop or restart Coder, see below.
+```
+
+If you instead used the **GitHub browser-button fallback** (the
+device-code check failed and the user clicked the button on the
+sign-in page), say so plainly:
 
 ```text
 === Coder is ready ===
 
 Open in your browser:   $ACCESS_URL
-  (Click "Sign in with GitHub" if you haven't already.)
+  (If you haven't already, click "Sign in with GitHub" there.)
 
 Your first dev environment:  $WORKSPACE_NAME
-  (or: skipped, you can create one from the dashboard)
+  (or: skipped, you can create one once you're signed in)
 
 If you want to add more dev environments later, you'll use the
 example project named "$TEMPLATE_NAME" that's already set up.
@@ -1008,6 +1097,9 @@ user to write down the things you can't show again later:
   template matrix and required variables.
 - [`references/first-user.md`](references/first-user.md) - `coder
   login` flags, env vars, and edge cases.
+- [`references/first-user-github-device.md`](references/first-user-github-device.md) -
+  GitHub device-code flow recipe for signing the first admin in
+  without a browser on the install machine.
 - [`references/production.md`](references/production.md) - deployment
   mode decision matrix, order of operations, scope boundaries.
 - [`references/wildcard-tls.md`](references/wildcard-tls.md) - DNS,
