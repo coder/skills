@@ -645,31 +645,54 @@ disabled), fall back to the email-and-password path. Don't reach
 for the browser flow unless the user has a working browser on
 this machine and asked for it.
 
-When device flow is available, run the recipe in
+When device flow is available, follow
 [`references/first-user-github-device.md`](references/first-user-github-device.md).
-It handles cookie priming, polling, `authorization_pending`, and
-writing the session into `$CODER_CONFIG_DIR/{url,session}` so
-subsequent `coder` commands are authenticated.
+**Run it as three separate tool calls**, with a chat message to
+the user between them:
 
-While polling, print to the user (substitute `$VERIFY_URI` and
-`$USER_CODE` from the device-endpoint response):
+1. **Fetch.** One short shell command that primes the OAuth
+   cookies, fetches the device code, and writes
+   `$STATE_DIR/github-device.{jar,env}`. Returns in ~3 seconds.
+   Do NOT include the polling loop in this call; if you do, the
+   command sits for up to 15 minutes and the user never sees the
+   code.
+2. **Tell the user, in chat (not in a shell command).** Read
+   `$VERIFY_URI` and `$USER_CODE` from the env file, then send
+   the user a chat message like:
 
-```text
-To sign in to Coder, open this on any device:
+   > To sign in to Coder, open this on any device (your phone
+   > is fine):
+   >
+   >   $VERIFY_URI
+   >
+   > Enter this code:
+   >
+   >   $USER_CODE
+   >
+   > Say "ok" when you're done and I'll finish setting you up
+   > as the admin.
 
-  $VERIFY_URI
+   Wait for the user's acknowledgement ("ok", "done", "entered
+   it"). If they ask for a different sign-in method instead,
+   abandon the device flow and switch to email-and-password.
+3. **Poll.** A separate shell command that runs the polling
+   loop until the callback returns 200, writes the session
+   token into `$CODER_CONFIG_DIR/{url,session}`, and verifies
+   with `coder whoami` and `coder users list`.
 
-Then enter this code:
+The reason for the split is that most agent tool runners buffer
+a shell command's stdout and only return it when the command
+exits. A combined fetch-and-poll script prints the code at the
+start but the runner doesn't surface it until the polling exits,
+which means the user sits looking at a hung chat for the full
+15-minute device-code window. The recipe document opens with
+this warning; respect it.
 
-  $USER_CODE
-
-I'll wait. As soon as GitHub confirms it, I'll finish setting
-you up as the admin.
-```
-
-When the recipe returns success, verify quietly with `coder
-whoami` and `coder users list`. The list should show one row with
-`OWNER` in the roles column.
+`users list` should show one row with `OWNER` in the roles
+column, with the email and login from the user's GitHub account.
+If it doesn't, tell the user in one line that GitHub sign-in
+didn't take and offer email-and-password instead; don't paste
+raw output.
 
 #### Email and password path (no browser)
 
@@ -941,6 +964,16 @@ End the handoff with a one-line offer:
   `coder server` exit doesn't mean the API is up.
 - **Do not run `coder server` in a foreground that ties up the
   chat.** Background it and tail the log.
+- **Do not run the GitHub device-flow recipe as a single shell
+  command.** Tool runners buffer shell stdout until the command
+  exits. A combined fetch-and-poll prints the `user_code` early,
+  then enters a 15-minute polling loop, so the code sits in the
+  buffer until the loop times out and the user never sees it.
+  Run it as three separate tool calls: a short fetch that exits
+  after writing `$STATE_DIR/github-device.{jar,env}`, an agent
+  chat message that reads `VERIFY_URI` + `USER_CODE` from the
+  env file and asks the user to authorize, then a separate poll
+  command. See `references/first-user-github-device.md`.
 - **Do not disable telemetry on the user's behalf.** It defaults
   to on, and Coder strips PII before sending. The user can opt
   out themselves with `CODER_TELEMETRY_ENABLE=false`; don't ask
