@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both trial setups (auto-tunnel, no TLS) and production setups (real domain, TLS, optional wildcard URL, optional custom external auth, optional external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup (or hands off to GitHub sign-in on fresh deployments), pushes a starter template, and (optionally) creates a first workspace.
+description: Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Handles both quick-start setups (one machine, auto-tunnel, no TLS) and production setups (real domain, TLS, optional wildcard URL, optional custom external auth, optional external provisioner). Use when the user wants to "install Coder", "set up Coder", "deploy Coder", "run Coder locally / in Docker / on Kubernetes / on a VM", "stand up Coder for my team", "put Coder behind HTTPS / a real domain", "bootstrap the first admin user from the terminal", "push a starter template", or otherwise get a working Coder deployment with one or more workspaces ready to go. Wraps the canonical install.sh, drives `coder login` for non-interactive first-user setup (or hands off to GitHub device-code sign-in on fresh deployments), pushes a starter template, and (optionally) creates a first workspace.
 ---
 
 # setup
@@ -84,7 +84,7 @@ Examples of the same question in DevOps voice vs user voice:
 
 | DevOps voice (don't)                          | User voice (do)                                                                                  |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------|
-| "Pick a deployment mode: trial or production."| "Are you trying Coder out, or setting it up for your team to use long-term?"                     |
+| "Pick a deployment mode: quick-start or production." | "Are you trying Coder out on this machine, or setting it up for your team to use long-term?" |
 | "Provide an access URL."                      | "What address should people open in their browser to use this? (Like `coder.yourcompany.com`.)" |
 | "Configure the wildcard access URL."          | "Some apps inside workspaces work better if Coder gets a wildcard DNS record. Want me to set that up, or skip it?" |
 | "First-user auth: GitHub or password?"        | "For sign-in, do you want me to walk you through GitHub (I'll print a short URL and a code; works from any phone), or just create an email and password for you?" |
@@ -114,8 +114,12 @@ A short concept glossary you can pull plain-English phrases from:
   GitLab / etc. so they can clone private repos".
 - **Owner** -> "the admin account; the first person to sign in
   becomes one automatically".
-- **Trial license** -> a paid feature unlock; the skill never turns
-  this on. Don't bring it up.
+- **Free vs paid** -> Coder is open source; nothing the skill does
+  costs money. The upstream CLI has a `--first-user-trial` flag
+  that turns on a 30-day enterprise-feature evaluation; the skill
+  always passes `--first-user-trial=false` and does not bring it
+  up. Ignore the word "trial" if it shows up in upstream
+  documentation; this skill never opts users into anything paid.
 
 If the user asks for technical detail ("what flag does that map
 to?", "show me the env var"), you can shift to engineer voice for
@@ -131,9 +135,9 @@ overwriting kubeconfigs, deleting volumes).
    user wants.
 2. **Install** the Coder binary or Helm chart via `install.sh`.
 3. **Start** the Coder server.
-4. **Bootstrap** the first admin user with `coder login --first-user-*`.
+4. **Bootstrap** the first admin user.
 5. **External services** (production only; optional): register external
-   auth, run an external provisioner. Skip in trial mode.
+   auth, run an external provisioner. Skip in quick-start mode.
 6. **Template**: push a starter that matches the chosen infrastructure.
 7. **Workspace** (optional): create the user's first workspace.
 8. **Summarize** with credentials, URLs, and next steps.
@@ -179,32 +183,37 @@ test -f "$HOME/.config/coderv2/url" && cat "$HOME/.config/coderv2/url"
 **Reuse an existing `coder` binary** if `coder --version` already
 works. Skip Phase 2 entirely unless the user asked to reinstall or
 the existing version is older than the deployment they want
-(production should pin a recent release; trial is fine on whatever
-is there).
+(production should pin a recent release; the quick-start path runs
+on whatever version is already there).
 
-**Isolate the trial from an existing login.** If
+**Isolate this install from an existing login.** If
 `~/.config/coderv2/url` exists and points somewhere the user does
 NOT want to overwrite (e.g. `https://dev.coder.com`, an internal
 team deployment), set isolated config and cache directories for
-every `coder` and `coder server` invocation in this session:
+every `coder` and `coder server` invocation in this session.
+Directories go under the standard XDG locations because the Coder
+CLI expects `CODER_CONFIG_DIR` to be a real config dir; we just
+pick a non-conflicting name.
 
 ```sh
-export CODER_CONFIG_DIR="$HOME/.config/coderv2-trial"
-export CODER_CACHE_DIRECTORY="$HOME/.cache/coder-trial"
+export CODER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/coderv2-quickstart"
+export CODER_CACHE_DIRECTORY="${XDG_CACHE_HOME:-$HOME/.cache}/coderv2-quickstart"
 mkdir -p "$CODER_CONFIG_DIR" "$CODER_CACHE_DIRECTORY"
 ```
 
 Ask the user before touching the existing config; the default is
-to isolate. Without isolation the trial's `coder login` overwrites
-the stored URL and session, kicking the user out of their real
-deployment.
+to isolate. Without isolation the new install's `coder login`
+overwrites the stored URL and session, kicking the user out of
+their real deployment.
 
 #### Pick the deployment mode
 
-Decide between **trial** and **production** before anything else.
-It drives almost every later choice: where the server runs, whether
-it needs a real domain, whether it needs a managed database. Don't
-show this as a config-style question; ask in plain English.
+Decide between **quick-start** and **production** before anything
+else. It drives almost every later choice: where the server runs,
+whether it needs a real domain, whether it needs a managed
+database. Don't show this as a config-style question; ask in
+plain English. Internally, the two modes are just labels for the
+shape of the install; nothing about either is a paid feature.
 
 Ask like this (pick whichever matches what the user has already
 said):
@@ -216,10 +225,10 @@ said):
 
 Map the answer:
 
-| What the user said                                    | Mode       |
-|-------------------------------------------------------|------------|
-| "trying it out", "demo", "play with it", "just me"    | trial      |
-| "on this laptop", "my server", "throwaway"            | trial      |
+| What the user said                                    | Mode        |
+|-------------------------------------------------------|-------------|
+| "trying it out", "demo", "play with it", "just me"    | quick-start |
+| "on this laptop", "my server", "throwaway"            | quick-start |
 | Names a real domain (`coder.example.com`)             | production |
 | "HTTPS", "TLS", "Let's Encrypt", "behind a proxy"     | production |
 | "For my team", "for the company", "staging"           | production |
@@ -244,13 +253,15 @@ automatically. So there are two reasonable paths:
   (their phone is fine), pastes the code, approves access on
   GitHub, and the skill captures the session and finishes setup.
   No browser on the install machine, no password to record.
-  Best for solo trials, demos, and small teams whose accounts
+  Best for solo installs, demos, and small teams whose accounts
   already live on GitHub.
 - **Email and password.** Fully scripted, no GitHub round trip.
   The skill picks a strong password, creates the admin account
-  from the terminal, and saves the email and password to
-  `~/.config/coder-install/credentials` (readable only by the
-  current user) so the user can find them later.
+  from the terminal, and saves the email and password to a
+  mode-0600 file in this install's state directory (under
+  `$XDG_STATE_HOME/coder-install`, defaulting to
+  `~/.local/state/coder-install`) so the user can find them
+  later. The exact path is printed in the final summary.
 
 Ask the user once. Phrase it without jargon:
 
@@ -289,8 +300,8 @@ The goal is the smallest possible interview. Ask one thing at a
 time, in plain English. Defaults are listed so you can lead with
 them.
 
-**Trial mode.** You only need one or two things from the user;
-everything else has a sane default.
+**Quick-start mode.** You only need one or two things from the
+user; everything else has a sane default.
 
 - **Where to run it.** Default: Docker if it's on the machine,
   otherwise install it directly on the machine. Don't lecture about
@@ -314,7 +325,8 @@ everything else has a sane default.
   Linux pod via Kubernetes if you're going through Helm.
   > "I'll add an example project that builds a Linux dev
   > environment in Docker so you have something to open. OK?"
-- **Build a first dev environment now?** Default yes for trial.
+- **Build a first dev environment now?** Default yes for
+  quick-start.
   > "Want me to build your first dev environment now so you can
   > open it as soon as Coder is ready?"
 
@@ -335,7 +347,7 @@ config file.
   > to handle HTTPS already, or should Coder handle HTTPS itself
   > using cert files I'll point it at?"
 - **Database.** Coder needs a real Postgres for production; the
-  built-in one is trial-only.
+  built-in one is for the quick-start path only.
   > "Coder needs a Postgres database for production. Do you have
   > one I can point it at? (If yes, I'll need its connection
   > string. If you're not sure, I can show you what one looks
@@ -446,38 +458,104 @@ Verify with `coder --version`. Exit criterion: the binary runs.
 
 ### Phase 3: Start the server
 
-#### Trial path
+#### Quick-start path
 
-Default: let `coder server` open its built-in tunnel. The tunnel is
-the most-reliable trial path because it routes around host-firewall
-and docker-bridge issues that bite local-only binds. Don't pass
-`--access-url`; the server will pick a `*.try.coder.app` URL and
-print it to stderr.
+Default: let `coder server` open its built-in tunnel. The tunnel
+is the most-reliable single-machine path because it routes around
+host-firewall and docker-bridge issues that bite local-only binds.
+Don't pass `--access-url`; the server will pick a
+`*.try.coder.app` URL and print it to stderr.
+
+Under the hood, when `coder server` starts without an access URL,
+it reads (or generates and persists) a wireguard keypair in the
+user's config dir at `${XDG_CONFIG_HOME:-$HOME/.config}/coderv2/devtunnel`,
+opens a wireguard connection to `pit-1.try.coder.app` (the
+wgtunnel server in `coderd/devtunnel/servers.go`), and serves
+traffic that arrives there. The public URL is
+`<base32hex(sha256(pubkey)[:8]) lowercased>.pit-1.try.coder.app`,
+derived from the same wireguard public key, so it's stable across
+restarts as long as the keypair file is intact.
+
+The skill does not derive the URL itself: the server announces
+it. As soon as the wireguard handshake succeeds, the server prints
+a block to stderr that ends with the line:
+
+```text
+View the Web UI:
+https://<id>.pit-1.try.coder.app
+```
+
+This is the only piece of the URL the skill should depend on;
+parse it from there. Tunnel handshake usually completes within
+2-5 seconds on a healthy network.
+
+All of the skill's persistent outputs (server log, pid file,
+credentials file if email/password is used, install notes) live
+in one directory the skill creates up front and prints back to
+the user in Phase 8. Do not scatter dotfiles across `$HOME`. The
+directory follows XDG: `$XDG_STATE_HOME/coder-install` if set,
+otherwise `$HOME/.local/state/coder-install`.
+
+```sh
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/coder-install"
+mkdir -p "$STATE_DIR"
+```
+
+For **standalone host install** (the `coder` binary on the host):
 
 ```sh
 nohup coder server \
-  > "$HOME/.coder-server.log" 2>&1 &
-echo $! > "$HOME/.coder-server.pid"
+  > "$STATE_DIR/server.log" 2>&1 &
+echo $! > "$STATE_DIR/server.pid"
 ```
 
-Watch the log for either:
+For **Docker compose**: don't run `coder server` directly; bring
+up the compose stack and let the container hold the log. Skip
+the state-dir log-and-pid setup (the container is its own
+supervisor; logs come from `docker compose logs`). The auto-tunnel
+still works inside the container as long as the compose file
+persists `/home/coder` to a named volume so the wireguard keypair
+survives restarts. The upstream `compose.yaml` in the
+`coder/coder` repo already does this.
 
-- A `https://<id>.try.coder.app` access URL appearing within ~30
-  seconds. The tunnel is up; record the URL and continue to Phase 4.
-- `create tunnel: ...` errors (no internet egress, blocked DNS,
-  `*.try.coder.app` not reachable). Stop the server and retry with
-  the localhost fallback below.
+Wait for the server to be ready and the tunnel URL to appear.
+The loop is fast on purpose: in Docker compose the server's
+HTTP port is up within a second or two, and the tunnel handshake
+completes a few seconds later. Don't pad with arbitrary sleeps.
 
 ```sh
-# Wait for either readiness or a hard tunnel error.
+# How to read the log depends on how it was started.
+# Use whichever of these matches the install method.
+coder_log() {
+  if [ -f "$STATE_DIR/server.log" ]; then
+    cat "$STATE_DIR/server.log"
+  elif [ -f docker-compose.yml ] || [ -f compose.yaml ]; then
+    docker compose logs coder 2>&1
+  else
+    return 1
+  fi
+}
+
+# Poll up to 60s. Check the log on every iteration so we can fail
+# fast when the tunnel can't come up at all (no egress, blocked
+# DNS, *.try.coder.app unreachable).
+ACCESS_URL=""
 for _ in $(seq 1 60); do
-  ACCESS_URL="$(grep -oE 'https://[a-z0-9-]+\.try\.coder\.app' \
-    "$HOME/.coder-server.log" | head -1)"
+  # The server prints a banner that includes the line
+  #   View the Web UI:
+  #   https://<id>.pit-1.try.coder.app
+  # so look for the announced URL on the line right after the
+  # banner. It is the URL we should trust; the wgtunnel hostname
+  # is derived from the wireguard public key (base32hex of
+  # sha256(pubkey)[:8]), but the skill should not re-derive it.
+  ACCESS_URL="$(coder_log 2>/dev/null \
+    | awk '/View the Web UI:/{getline; print; exit}' \
+    | grep -oE 'https?://[a-zA-Z0-9.-]+(\:[0-9]+)?')"
   if [ -n "$ACCESS_URL" ] && \
      curl -fsS "$ACCESS_URL/healthz" >/dev/null 2>&1; then
     break
   fi
-  if grep -q 'create tunnel' "$HOME/.coder-server.log"; then
+  if coder_log 2>/dev/null | grep -q 'create tunnel'; then
     ACCESS_URL=""
     break
   fi
@@ -485,17 +563,19 @@ for _ in $(seq 1 60); do
 done
 ```
 
-**Localhost fallback** (no internet egress, or user explicitly asked
-for local-only):
+**Local-only fallback** (no internet egress, or user explicitly
+asked for local-only). Only fall back to this if the loop above
+exits with `ACCESS_URL=""`; the auto-tunnel is the default
+because it is more reliable.
 
 ```sh
-kill "$(cat "$HOME/.coder-server.pid")" 2>/dev/null || true
+kill "$(cat "$STATE_DIR/server.pid")" 2>/dev/null || true
 ACCESS_URL="http://localhost:7080"
 nohup coder server \
   --access-url "$ACCESS_URL" \
   --http-address 0.0.0.0:7080 \
-  > "$HOME/.coder-server.log" 2>&1 &
-echo $! > "$HOME/.coder-server.pid"
+  > "$STATE_DIR/server.log" 2>&1 &
+echo $! > "$STATE_DIR/server.pid"
 for _ in $(seq 1 60); do
   curl -fsS "$ACCESS_URL/healthz" >/dev/null 2>&1 && break
   sleep 1
@@ -516,6 +596,10 @@ Other supervisors instead of `nohup` (pick whichever fits the host):
   `sudo systemctl restart coder`.
 - **tmux**: `tmux new -d -s coder "coder server"` for a live log
   the user can attach to.
+
+In either of those cases the server log is no longer in
+`$STATE_DIR/server.log`; record `journalctl -u coder` or
+`tmux a -t coder` instead, and skip writing the pid file.
 
 #### Production path
 
@@ -699,18 +783,23 @@ All four of `--first-user-email`, `--first-user-username`,
 `--first-user-full-name`, and `--first-user-trial` are also accepted
 as `CODER_FIRST_USER_*` env vars; use whichever is more convenient.
 
-The password has no recovery path. Persist it to a mode-0600 file at
-`~/.config/coder-install/credentials` immediately after `coder login`
-succeeds, so the user has a way back in:
+The password has no recovery path. Persist it to a mode-0600 file
+in the same `$STATE_DIR` Phase 3 created (so everything the skill
+produced for this install lives in one place):
 
 ```sh
 umask 0077
-mkdir -p "$HOME/.config/coder-install"
 printf 'url=%s\nusername=%s\nemail=%s\npassword=%s\n' \
   "$ACCESS_URL" "$USERNAME" "$EMAIL" "$PASSWORD" \
-  > "$HOME/.config/coder-install/credentials"
-echo "saved to $HOME/.config/coder-install/credentials (mode 600)"
+  > "$STATE_DIR/credentials"
+chmod 0600 "$STATE_DIR/credentials"
 ```
+
+`STATE_DIR` was set in Phase 3 to
+`${XDG_STATE_HOME:-$HOME/.local/state}/coder-install`. Don't
+create a separate `~/.config/coder-install/` for this; the
+credentials are skill-managed runtime state, not user-edited
+config.
 
 This differs from the GitHub path: GitHub-bootstrapped deployments
 don't need a credentials file because the user owns the recovery
@@ -727,13 +816,14 @@ coder users list
 `whoami` returns the bootstrapped user. `users list` shows exactly
 one row with `OWNER` in the roles column.
 
-For trial-license setup, persistent tokens, and the full failure
+For the upstream CLI's enterprise-trial flow (separate from the
+skill's quick-start mode), persistent tokens, and the full failure
 list, read `references/first-user.md`.
 
 
 ### Phase 5: External services (production only)
 
-Skip this phase entirely in trial mode.
+Skip this phase entirely in quick-start mode.
 
 In production, both items below are **optional**. The default
 github.com external auth provider is already on for fresh
@@ -918,9 +1008,9 @@ done
 
 If the agent stalls in `connecting`, see
 `references/troubleshooting.md#workspace-agent-cant-reach-the-server`.
-The usual cause on a single-host Linux setup is the trial-path
-binding to `127.0.0.1`, which is unreachable from the workspace
-container.
+The usual cause on a single-host Linux setup is the local-only
+fallback binding to `127.0.0.1`, which is unreachable from the
+workspace container.
 ### Phase 8: Wrap up and tell the user what they got
 
 After everything is up, print one short block, clearly delimited.
@@ -979,7 +1069,7 @@ Sign in with:
   Email:    $EMAIL
   Password: $PASSWORD
 
-These are saved to ~/.config/coder-install/credentials so you
+These are saved to $STATE_DIR/credentials (mode 0600) so you
 can find them later. Don't share that file.
 
 Your first dev environment:  $WORKSPACE_NAME
@@ -997,22 +1087,54 @@ applies.
 
 To see Coder's logs:
 
-- Started in the background by the skill (trial):
-  `tail -f $HOME/.coder-server.log`
+- Quick-start install (skill ran `coder server` in the background):
+  `tail -f $STATE_DIR/server.log`
 - systemd service:        `journalctl -u coder -f`
 - Docker compose:         `docker compose logs -f coder`
 - Kubernetes via Helm:    `kubectl logs -n coder deploy/coder -f`
 
 To stop Coder:
 
-- Started in the background by the skill (trial):
-  `kill "$(cat ~/.coder-server.pid)"`
+- Quick-start install (skill ran `coder server` in the background):
+  `kill "$(cat "$STATE_DIR/server.pid")"`
 - systemd service:   `sudo systemctl stop coder`
 - Docker compose:    `docker compose down` in the install
   directory. Don't add `-v` unless the user explicitly asks to
   wipe everything; it deletes the database and every dev
   environment.
 - Kubernetes via Helm: `helm uninstall coder -n coder`.
+
+Also tell the user where the install's state directory is, so
+they can find or delete it. Print the actual expanded path, not
+the `$STATE_DIR` placeholder:
+
+```text
+The skill kept its working files in:
+  $STATE_DIR
+
+  - server.log     server output
+  - server.pid     pid of the background server (if started here)
+  - credentials    admin email + password (mode 0600), if applicable
+
+Deleting that directory cleans up everything the skill wrote
+under your home directory. (It does not delete Coder itself or
+your dev environments.)
+```
+
+If the user mentioned (or might benefit from) Premium features
+like Workspace Proxies, groups, audit log retention, or template
+ACLs, mention they can add a license later. The skill never opts
+them in automatically; getting a license is a separate flow that
+asks for some contact info and is run by Coder's licensor service.
+A short pointer is enough; don't over-explain:
+
+```text
+If you ever want to try Premium features (Workspace Proxies,
+groups, audit log retention, template ACLs), you can request a
+license at https://coder.com/trial and paste it into Coder under
+Settings -> Licenses (or `coder licenses add -f license.jwt`).
+You don't have to do this now, and the skill won't do it for you.
+```
 
 For production setups with custom integrations, also remind the
 user to write down the things you can't show again later:
@@ -1067,8 +1189,18 @@ user to write down the things you can't show again later:
 - Do not echo cloud credentials, OAuth client secrets, provisioner
   keys, or the admin password back to the user. Confirm receipt with
   `[set]` or a redacted form.
-- Do not start a trial license unless the user asked. Default to
-  `--first-user-trial=false`.
+- Do not opt the user into the upstream enterprise-trial license
+  flow unless they explicitly asked. Always pass
+  `--first-user-trial=false` to `coder login` and never set
+  `CODER_FIRST_USER_TRIAL=true`. The flag's signup-time path
+  collects PII (first name, last name, phone, job title, company,
+  country, developer count) and POSTs it to Coder's licensor;
+  there is no consent UX in the skill for that. If a user later
+  wants Premium features, the post-signup `POST /api/v2/licenses`
+  endpoint and `coder licenses add` accept a JWT they request
+  themselves, with no PII collection on the skill's side. Phase 8
+  prints a short pointer at that flow. The skill's "quick-start"
+  mode label is unrelated to the trial flag and never costs money.
 - Do not skip the `/healthz` readiness probe. A successful `coder
   server` exit doesn't mean the API is up.
 - Do not run `coder server` in a foreground that ties up the chat.

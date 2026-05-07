@@ -80,7 +80,7 @@ Setup parameters:
 - Admin user:    $USERNAME
 - Admin name:    $FULL_NAME
 - Admin password: $PASSWORD
-- Trial:         false
+- Pass --first-user-trial=false (no enterprise trial license).
 - First-user auth: username/password (NOT GitHub)
 - Starter template: $TEMPLATE_NAME
 - Create one workspace named "$WORKSPACE_NAME" from the $TEMPLATE_NAME template.
@@ -174,7 +174,7 @@ print('ok: template', '$TEMPLATE_NAME')
 # workspace is actually usable. The user-visible failure mode if we
 # only check build state is "workspace running but the dashboard
 # spinner never resolves" -- exactly the failure caused by binding the
-# trial server to 127.0.0.1 (host.docker.internal in the workspace
+# server to 127.0.0.1 (host.docker.internal in the workspace
 # container can't reach host loopback).
 WS_DEADLINE=$(( $(date +%s) + 300 ))
 while :; do

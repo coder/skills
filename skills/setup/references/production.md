@@ -5,9 +5,9 @@ that survives a reboot, serves a real domain, and lets multiple users
 log in. Use it in addition to the rest of the skill, not as a
 replacement for it.
 
-The trial path (auto-tunnel or localhost, no TLS, no extra
-configuration) covers demos and "kick the tires" usage. Switch to
-this path when any of:
+The skill's quick-start path (auto-tunnel or localhost, no TLS,
+no extra configuration) covers demos and "kick the tires" usage.
+Switch to this path when any of:
 
 - The user names a real domain (`coder.example.com`, `dev.acme.io`).
 - The user mentions HTTPS, Let's Encrypt, ingress, or "TLS".
@@ -17,9 +17,9 @@ this path when any of:
   the Coder server itself should not see.
 - The user says "production", "staging", or "for the team".
 
-The skill's Phase 1 collects the deployment mode. Once the user picks
-production, this file's order-of-operations replaces the trial path
-through Phases 2 and beyond.
+The skill's Phase 1 collects the deployment mode. Once the user
+picks production, this file's order-of-operations replaces the
+quick-start path through Phases 2 and beyond.
 
 ## Order of operations
 
@@ -59,7 +59,7 @@ the next step until the current one is verifiable.
      `wildcard-tls.md`. Set `CODER_WILDCARD_ACCESS_URL` only if you
      decided to in step 1.
    - Use a managed PostgreSQL (RDS, Cloud SQL, managed PG operator).
-     The built-in PG is fine for trials only.
+     The built-in PG is for the quick-start path only.
 
 4. **Bootstrap the admin user** (Phase 4 of the skill).
    - **GitHub path** (default for fresh deployments): the dashboard
@@ -126,13 +126,14 @@ they ask:
   vendor's snapshot story.
 - **Licensing and Premium / Enterprise features.** Workspace proxies,
   groups, audit log retention, and template ACLs need a license.
-  Don't enable a trial unless the user asked.
+  Don't opt the user into the upstream `--first-user-trial`
+  enterprise evaluation unless they asked.
 - **AI Bridge, prebuilds, autostop schedules, idle timeouts.** Each is
   documented separately.
 
 ## Deployment-mode decision matrix
 
-| Concern                                  | Trial path                                  | Production path                                       |
+| Concern                                  | Quick-start path                            | Production path                                       |
 |------------------------------------------|---------------------------------------------|-------------------------------------------------------|
 | Access URL                               | auto-tunnel `*.try.coder.app` (default)     | `https://coder.example.com`                           |
 | Wildcard URL                             | auto-tunnel suffix                          | optional; set when subdomain app routing is wanted    |

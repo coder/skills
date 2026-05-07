@@ -251,8 +251,8 @@ sudo iptables -I nixos-fw -i docker0 -p tcp --dport 7080 -j ACCEPT
 
 Durable fix: add `docker0` to
 `networking.firewall.trustedInterfaces` in the system config. Or
-better: switch the trial to Docker compose so the server isn't on
-the host at all.
+better: switch the install to Docker compose so the server isn't
+on the host at all.
 
 ## Cleanup
 

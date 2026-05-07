@@ -15,9 +15,9 @@ do it. The user-facing reasons:
 - **Build environment hardening.** Keep the server's process tree
   free of `terraform` and untrusted template code.
 
-Running the built-in provisioner is fine for the trial path. Switch
-to external as soon as the deployment serves a team or touches a
-real cloud account.
+Running the built-in provisioner is fine for the quick-start path.
+Switch to external as soon as the deployment serves a team or
+touches a real cloud account.
 
 ## Authentication options
 
@@ -226,8 +226,8 @@ cover the dynamic case.
 - All templates run against local Docker on the same host as the
   server. The built-in provisioner is fine; an external one is just
   another moving part.
-- Single-user trial install. Don't introduce two services until the
-  deployment grows.
+- Single-user quick-start install. Don't introduce two services
+  until the deployment grows.
 
 If you do skip the external provisioner now and add it later, every
 template that uses cloud creds needs a `--provisioner-tag` flag at

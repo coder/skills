@@ -212,8 +212,14 @@ Three valid choices, in order of preference:
 2. **`http://localhost:7080`.** Local-only. Workspaces will not be
    reachable from outside the host. Fine for solo demos.
 3. **The built-in tunnel.** If `coder server` starts with no
-   `--access-url`, the server prints a `*.try.coder.app` URL. Tell
-   the user it is a public tunnel intended for trial use only.
+   `--access-url`, the server opens a wireguard tunnel to
+   `pit-1.try.coder.app` and announces a `https://<id>.pit-1.try.coder.app`
+   URL on the line after `View the Web UI:` in stderr. The hostname
+   is derived from a wireguard keypair persisted in the user's
+   config dir, so it stays the same across restarts. Tell the user
+   the URL is publicly reachable on a non-guessable subdomain,
+   protected by their sign-in. Fine for single-machine setups; for
+   teams or production, switch to a real domain.
 
 Whatever you pick, set it once and reuse the same value for `coder
 login` in Phase 4. Mismatches between server access URL and login URL

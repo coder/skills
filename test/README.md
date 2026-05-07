@@ -66,7 +66,7 @@ holds by leaving Docker compose as the only viable path.
 
 ## Production path
 
-`run.sh` covers the trial path only. The production-mode workflow
+`run.sh` covers the quick-start path only. The production-mode workflow
 (real domain, wildcard URL, TLS, GitHub external auth, external
 provisioner) needs DNS, an OAuth App, and a TLS issuer that the
 harness can't provide on its own without a kind cluster + self-
