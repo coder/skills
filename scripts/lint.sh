@@ -64,6 +64,7 @@ if [ -n "$JSON_FILES" ]; then
   JSON_OK=1
   while IFS= read -r f; do
     [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
     if ! jq -e . "$f" >/dev/null 2>&1; then
       echo "invalid JSON: $f" >&2
       JSON_OK=0

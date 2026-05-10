@@ -12,11 +12,11 @@ Skills for Claude Code, Codex, Cursor, and other coding agents to install, confi
 npx skills add coder/skills --global
 ```
 
-**Claude Code**:
+**Claude Code / Codex**:
 
 ```sh
 /plugin marketplace add coder/skills
-/plugin install coder@coder-skills
+/plugin install coder-skills@coder-skills
 /reload-plugins
 ```
 
