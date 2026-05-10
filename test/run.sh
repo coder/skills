@@ -35,7 +35,7 @@ cleanup() {
   # Tear down only via Docker compose. Never `pkill coder` (it would
   # kill the workspace agent if the test runs on a Coder workspace).
   if [ -f "$TESTDIR/docker-compose.yml" ]; then
-    ( cd "$TESTDIR" && docker compose down -v --remove-orphans >/dev/null 2>&1 || true )
+    (cd "$TESTDIR" && docker compose down -v --remove-orphans >/dev/null 2>&1 || true)
   fi
   # Remove an orphan workspace container left by the demo template.
   docker rm -f "coder-${USERNAME}-${WORKSPACE_NAME}" >/dev/null 2>&1 || true
@@ -55,7 +55,7 @@ if ! docker version >/dev/null 2>&1; then
 fi
 
 PROMPT_FILE="$WORKDIR/prompt.txt"
-cat > "$PROMPT_FILE" <<EOF
+cat >"$PROMPT_FILE" <<EOF
 You are testing the setup skill end-to-end. You MUST use the
 setup skill. Follow every phase. Do not deviate.
 
@@ -97,12 +97,12 @@ CLAUDE_OUT="$WORKDIR/claude-output.txt"
 set +e
 HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" \
   timeout "$TIMEOUT_SECONDS" claude -p \
-    --plugin-dir "$MARKETPLACE_DIR" \
-    --permission-mode bypassPermissions \
-    --output-format text \
-    --add-dir "$TESTDIR" \
-    < "$PROMPT_FILE" \
-    > "$CLAUDE_OUT" 2>&1
+  --plugin-dir "$MARKETPLACE_DIR" \
+  --permission-mode bypassPermissions \
+  --output-format text \
+  --add-dir "$TESTDIR" \
+  <"$PROMPT_FILE" \
+  >"$CLAUDE_OUT" 2>&1
 CLAUDE_RC=$?
 set -e
 
@@ -133,14 +133,14 @@ curl -fsS "$ACCESS_URL/healthz" >/dev/null || fail "GET /healthz did not return 
 LOGIN_JSON="$(curl -fsS -X POST \
   -H 'content-type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
-  "$ACCESS_URL/api/v2/users/login")" \
-  || fail "login API failed (skill did not bootstrap the admin user)"
+  "$ACCESS_URL/api/v2/users/login")" ||
+  fail "login API failed (skill did not bootstrap the admin user)"
 SESSION="$(echo "$LOGIN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 [ -n "$SESSION" ] || fail "empty session token from login API"
 
 # 3) users
-USERS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/users")" \
-  || fail "GET /api/v2/users failed"
+USERS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/users")" ||
+  fail "GET /api/v2/users failed"
 echo "$USERS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -153,8 +153,8 @@ print('ok: user', u['username'])
 " || fail "users verification failed"
 
 # 4) docker template
-TEMPLATES_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/organizations/default/templates")" \
-  || fail "GET templates failed"
+TEMPLATES_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/organizations/default/templates")" ||
+  fail "GET templates failed"
 echo "$TEMPLATES_JSON" | python3 -c "
 import json, sys
 templates = json.load(sys.stdin)
@@ -176,10 +176,10 @@ print('ok: template', '$TEMPLATE_NAME')
 # spinner never resolves" -- exactly the failure caused by binding the
 # server to 127.0.0.1 (host.docker.internal in the workspace
 # container can't reach host loopback).
-WS_DEADLINE=$(( $(date +%s) + 300 ))
+WS_DEADLINE=$(($(date +%s) + 300))
 while :; do
-  WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
-    || fail "GET /api/v2/workspaces failed"
+  WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" ||
+    fail "GET /api/v2/workspaces failed"
   WS_STATE="$(printf '%s' "$WS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -199,7 +199,7 @@ print(f\"{b['job']['status']},{b['status']},{b['transition']},{lc}\")
       echo "ok: workspace $WORKSPACE_NAME job=succeeded status=running transition=start agent=ready"
       break
       ;;
-    failed,*|canceled,*|*,failed,*|*,canceled,*|*,*,*,start_error|*,*,*,start_timeout)
+    failed,* | canceled,* | *,failed,* | *,canceled,* | *,*,*,start_error | *,*,*,start_timeout)
       fail "workspace failed: $WS_STATE"
       ;;
     missing)

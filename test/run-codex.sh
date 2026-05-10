@@ -34,7 +34,7 @@ cd "$TESTDIR"
 
 cleanup() {
   if [ -f "$TESTDIR/docker-compose.yml" ]; then
-    ( cd "$TESTDIR" && docker compose down -v --remove-orphans >/dev/null 2>&1 || true )
+    (cd "$TESTDIR" && docker compose down -v --remove-orphans >/dev/null 2>&1 || true)
   fi
   docker rm -f "coder-${USERNAME}-${WORKSPACE_NAME}" >/dev/null 2>&1 || true
   rm -rf "$WORKDIR"
@@ -71,7 +71,7 @@ fi
 cp -r "$MARKETPLACE_DIR/skills/setup" "$FAKE_CODEX_HOME/skills/setup"
 
 PROMPT_FILE="$WORKDIR/prompt.txt"
-cat > "$PROMPT_FILE" <<EOF
+cat >"$PROMPT_FILE" <<EOF
 You are testing the setup skill end-to-end. You MUST use the
 setup skill in \$CODEX_HOME/skills/setup. Follow every phase. Do
 not deviate.
@@ -115,11 +115,11 @@ CODEX_OUT="$WORKDIR/codex-output.txt"
 set +e
 HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" CODEX_HOME="$FAKE_CODEX_HOME" \
   timeout "$TIMEOUT_SECONDS" codex exec \
-    --skip-git-repo-check \
-    --dangerously-bypass-approvals-and-sandbox \
-    --cd "$TESTDIR" \
-    "$(cat "$PROMPT_FILE")" \
-    > "$CODEX_OUT" 2>&1
+  --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  --cd "$TESTDIR" \
+  "$(cat "$PROMPT_FILE")" \
+  >"$CODEX_OUT" 2>&1
 CODEX_RC=$?
 set -e
 
@@ -146,14 +146,14 @@ curl -fsS "$ACCESS_URL/healthz" >/dev/null || fail "GET /healthz did not return 
 LOGIN_JSON="$(curl -fsS -X POST \
   -H 'content-type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
-  "$ACCESS_URL/api/v2/users/login")" \
-  || fail "login API failed (skill did not bootstrap the admin user)"
+  "$ACCESS_URL/api/v2/users/login")" ||
+  fail "login API failed (skill did not bootstrap the admin user)"
 SESSION="$(echo "$LOGIN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 [ -n "$SESSION" ] || fail "empty session token from login API"
 
 # 3) users
-USERS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/users")" \
-  || fail "GET /api/v2/users failed"
+USERS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/users")" ||
+  fail "GET /api/v2/users failed"
 echo "$USERS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -166,8 +166,8 @@ print('ok: user', u['username'])
 " || fail "users verification failed"
 
 # 4) docker template
-TEMPLATES_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/organizations/default/templates")" \
-  || fail "GET templates failed"
+TEMPLATES_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/organizations/default/templates")" ||
+  fail "GET templates failed"
 echo "$TEMPLATES_JSON" | python3 -c "
 import json, sys
 templates = json.load(sys.stdin)
@@ -177,10 +177,10 @@ print('ok: template', '$TEMPLATE_NAME')
 " || fail "templates verification failed"
 
 # 5) demo workspace.
-WS_DEADLINE=$(( $(date +%s) + 300 ))
+WS_DEADLINE=$(($(date +%s) + 300))
 while :; do
-  WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" \
-    || fail "GET /api/v2/workspaces failed"
+  WS_JSON="$(curl -fsS -H "Coder-Session-Token: $SESSION" "$ACCESS_URL/api/v2/workspaces")" ||
+    fail "GET /api/v2/workspaces failed"
   WS_STATE="$(printf '%s' "$WS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -200,7 +200,7 @@ print(f\"{b['job']['status']},{b['status']},{b['transition']},{lc}\")
       echo "ok: workspace $WORKSPACE_NAME job=succeeded status=running transition=start agent=ready"
       break
       ;;
-    failed,*|canceled,*|*,failed,*|*,canceled,*|*,*,*,start_error|*,*,*,start_timeout)
+    failed,* | canceled,* | *,failed,* | *,canceled,* | *,*,*,start_error | *,*,*,start_timeout)
       fail "workspace failed: $WS_STATE"
       ;;
     missing)

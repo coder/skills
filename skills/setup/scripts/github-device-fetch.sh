@@ -44,10 +44,13 @@ trap cleanup_on_failure EXIT
 #     Location header.
 LOC="$(curl -sS -D - -o /dev/null \
   --cookie-jar "$JAR" --max-redirs 0 \
-  "$ACCESS_URL/api/v2/users/oauth2/github/callback" \
-  | awk -F': ' 'tolower($1) == "location" { sub(/\r$/,"",$2); print $2 }')"
+  "$ACCESS_URL/api/v2/users/oauth2/github/callback" |
+  awk -F': ' 'tolower($1) == "location" { sub(/\r$/,"",$2); print $2 }')"
 STATE="${LOC##*state=}"
-[ -n "$STATE" ] || { echo "could not parse oauth state from $LOC" >&2; exit 1; }
+[ -n "$STATE" ] || {
+  echo "could not parse oauth state from $LOC" >&2
+  exit 1
+}
 
 # 1b. Ask the server for a GitHub device code. The server
 #     proxies to GitHub's /login/device/code endpoint and returns
@@ -57,7 +60,7 @@ DEV_JSON="$(curl -sSf "$ACCESS_URL/api/v2/users/oauth2/github/device")"
 # 1c. Write the values to a state file the agent and step 3 will
 #     read. Plain shell-source format so the polling step can
 #     `. "$STATE_DIR/github-device.env"`.
-python3 - "$DEV_JSON" "$STATE" <<'PY' > "$DEV_FILE"
+python3 - "$DEV_JSON" "$STATE" <<'PY' >"$DEV_FILE"
 import json, sys, shlex
 d = json.loads(sys.argv[1])
 state = sys.argv[2]

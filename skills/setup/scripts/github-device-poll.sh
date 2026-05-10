@@ -47,7 +47,7 @@ trap cleanup_scratch EXIT
 # "authorization_pending"; once they have, it returns 200 with
 # {"redirect_url": "..."} and a Set-Cookie:
 # coder_session_token=... header that's the admin's session.
-DEADLINE=$(( $(date +%s) + EXPIRES_IN ))
+DEADLINE=$(($(date +%s) + EXPIRES_IN))
 while :; do
   HTTP=$(curl -sS -o "$RESP" -w '%{http_code}' \
     --cookie "$JAR" --cookie-jar "$JAR" \
@@ -58,8 +58,8 @@ while :; do
       DETAIL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("detail",""))' "$RESP" 2>/dev/null || true)"
       case "$DETAIL" in
         authorization_pending) ;;
-        slow_down)             INTERVAL=$((INTERVAL + 5)) ;;
-        expired_token|access_denied|*)
+        slow_down) INTERVAL=$((INTERVAL + 5)) ;;
+        expired_token | access_denied | *)
           echo "github device login failed: $DETAIL" >&2
           cat "$RESP" >&2
           exit 1
@@ -84,13 +84,16 @@ done
 # both plain text, mode 0600. CODER_CONFIG_DIR overrides the
 # default ~/.config/coderv2.
 TOKEN="$(awk '$6 == "coder_session_token" { print $7 }' "$JAR" | tail -1)"
-[ -n "$TOKEN" ] || { echo "no coder_session_token in cookie jar" >&2; exit 1; }
+[ -n "$TOKEN" ] || {
+  echo "no coder_session_token in cookie jar" >&2
+  exit 1
+}
 
 CFG="${CODER_CONFIG_DIR:-$HOME/.config/coderv2}"
 mkdir -p "$CFG"
 umask 0077
-printf '%s' "$ACCESS_URL" > "$CFG/url"
-printf '%s' "$TOKEN"      > "$CFG/session"
+printf '%s' "$ACCESS_URL" >"$CFG/url"
+printf '%s' "$TOKEN" >"$CFG/session"
 
 # Verify the CLI is signed in as the admin. (Scratch files are
 # removed by the EXIT trap above.)
