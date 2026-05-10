@@ -1,7 +1,3 @@
-# Repo-level developer entry points. Defers to scripts/lint.sh and
-# scripts/fmt.sh so the same logic runs locally and in CI without
-# duplication.
-
 .PHONY: help lint fmt fmt-check test test-claude test-codex
 
 help:
@@ -25,7 +21,7 @@ fmt-check:
 test: test-claude test-codex
 
 test-claude:
-	@bash test/run.sh
+	@bash test/claude.sh
 
 test-codex:
-	@bash test/run-codex.sh
+	@bash test/codex.sh
