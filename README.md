@@ -12,13 +12,21 @@ Skills for Claude Code, Codex, Cursor, and other coding agents to install, confi
 npx skills add coder/skills --global
 ```
 
-**Claude Code / Codex**:
+**Claude Code**:
 
 ```sh
 /plugin marketplace add coder/skills
 /plugin install coder-skills@coder-skills
 /reload-plugins
 ```
+
+**Codex**:
+
+```sh
+codex plugin marketplace add coder/skills
+```
+
+Then open Codex and install `coder-skills` from `/plugins`.
 
 After installing, the skill activates automatically when you ask an agent to install or set up Coder.
 
