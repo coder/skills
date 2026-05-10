@@ -8,7 +8,6 @@ node_modules/
 .idea/
 
 # Scratch directories left behind by `npx skills add` smoke tests.
-.agents/
 .claude/
 .codex/
 .mux/
