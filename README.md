@@ -6,10 +6,16 @@ Skills for Claude Code, Codex, Cursor, and other coding agents to install, confi
 
 ## Usage
 
-**npx skills**:
+**Codex with npx skills**:
 
 ```sh
-npx skills add coder/skills --global
+npx skills add coder/skills --global --agent codex --skill setup --yes --copy
+```
+
+Start a new Codex session after installing. To verify:
+
+```sh
+codex debug prompt-input 'noop' | rg 'setup:'
 ```
 
 **Claude Code**:
@@ -26,7 +32,10 @@ npx skills add coder/skills --global
 codex plugin marketplace add coder/skills
 ```
 
-Then open Codex and install `coder-skills` from `/plugins`.
+This registers the marketplace, but Codex CLI 0.130.0 does not provide
+a command-line plugin install or enable command. Use `npx skills` for a
+fully command-line Codex install, or open Codex and install from
+`/plugins` if using the marketplace UI.
 
 After installing, the skill activates automatically when you ask an agent to install or set up Coder.
 
