@@ -9,7 +9,7 @@ Skills for Claude Code, Codex, Cursor, and other coding agents to install, confi
 **skills CLI**:
 
 ```sh
-npx skills add coder/skills --global --skill '*'
+npx skills add coder/skills --global
 ```
 
 This installs every skill in this repository for the detected agent.
