@@ -1,28 +1,22 @@
 ---
 name: setup
 description: |
-  Install and bootstrap a Coder (coder/coder) deployment end-to-end
-  from the CLI without the web UI. Covers quick-start (one machine,
-  auto-tunnel URL) and production (real domain, TLS, wildcard, OIDC,
-  external provisioner). Drives GitHub device-code on fresh
-  deployments to sign the first admin in without a browser, falls back
-  to email/password for scripted runs, pushes a starter template, and
-  optionally creates a first workspace.
-
+  Install and bootstrap a Coder (coder/coder) deployment end-to-end.
+  Covers quick-start and production deployments.
+  
   Activate when the user says: "install Coder", "set up Coder",
   "deploy Coder", "bootstrap Coder", "run Coder in Docker / on
   Kubernetes / on a VM", "Coder on AWS / GCP / Azure", "put Coder
   behind HTTPS / Caddy / nginx / cert-manager", "wildcard domain",
   "headless / non-interactive setup", "create the first admin from the
   CLI", "push a starter template", or "create my first workspace".
-  Also activate for /coder:setup.
 
   Do NOT activate for upgrading an existing deployment, editing an
   existing template, debugging a running server, or configuring OIDC /
   custom OAuth on a running deployment.
 ---
 
-# setup
+# Setup
 
 End-to-end install and first-run setup for a Coder deployment without
 opening the Coder web UI.

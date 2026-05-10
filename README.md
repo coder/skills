@@ -1,23 +1,34 @@
-# coder/skills
+# Coder Skills
 
-Agent skills for installing, configuring, and operating
-[Coder](https://github.com/coder/coder) from the command line.
+[![skills.sh](https://skills.sh/b/coder/skills)](https://skills.sh/coder/skills)
 
-| Skill                            | What it does                                                                                                                                                                                                                                                                |
-|----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`setup`](skills/setup/SKILL.md) | End-to-end install and first-run setup of a Coder deployment without the web UI: install, sign in the first admin (GitHub device flow or generated email/password), push a starter template, optionally build the first workspace. Covers Docker, Kubernetes, and direct host installs. |
+Skills for Claude Code, Codex, Cursor, and other coding agents to install, configure, and operate Coder.
 
-## Install
+## Usage
 
-### `npx skills` (recommended)
-
-The [`skills`](https://www.npmjs.com/package/skills) CLI works with
-every major coding-agent CLI. It resolves a marketplace, picks a
-skill, and drops it under each agent's discovery directory:
+**npx skills**:
 
 ```sh
-# project-local: drops the skill in ./.claude/skills, ./.agents/skills, ...
-npx skills add coder/skills@setup
+npx skills add coder/skills
+```
+
+**Claude Code**:
+
+```sh
+/plugin marketplace add coder/skills
+/plugin install coder@coder-skills
+/reload-plugins
+```
+
+**Codex**:
+
+```sh
+codex plugin marketplace add coder/skills
+codex plugin install coder@coder-skills
+```
+
+
+### `npx skills` (recommended)
 
 # user-global: drops it in ~/.claude/skills, ~/.codex/skills, ~/.cursor/skills, ...
 npx skills add coder/skills@setup --global

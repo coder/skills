@@ -13,7 +13,7 @@
   "plugins": [
     {
       "name": "coder",
-      "description": "Install and bootstrap a Coder (coder/coder) deployment end-to-end from the CLI without using the web UI. Asks the user for deployment mode (quick-start vs production), infrastructure (Docker / Kubernetes / direct), and sign-in method, then installs via the canonical install.sh, drives the GitHub device-code flow on fresh deployments to sign the first admin in without a browser on the install machine (falling back to a generated email and password for fully scripted setups), pushes a starter template, optionally builds the first workspace, and hands off with a short plain-English guide. Defers per-topic configuration (OIDC, custom OAuth, GitLab, external provisioners, wildcard URL, TLS, template authoring, upgrades) to the upstream docs at https://coder.com/docs/llms.txt instead of duplicating it.",
+      "description": "Install and bootstrap a Coder (coder/coder) deployment end-to-end.",
       "version": "0.2.0",
       "author": {
         "name": "Coder",
