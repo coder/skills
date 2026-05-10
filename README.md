@@ -18,12 +18,25 @@ Start a new Codex session after installing. To verify:
 codex debug prompt-input 'noop' | rg 'setup:'
 ```
 
-**Claude Code**:
+**Claude Code with npx skills**:
 
 ```sh
-/plugin marketplace add coder/skills
-/plugin install coder-skills@coder-skills
-/reload-plugins
+npx skills add coder/skills --global --agent claude-code --skill setup --yes --copy
+```
+
+Start a new Claude Code session after installing. To verify:
+
+```sh
+claude -p --tools '' --permission-mode bypassPermissions \
+  '/setup Do not install or configure anything. Reply with exactly: SETUP_SKILL_LOADED'
+```
+
+**Claude Code plugin marketplace**:
+
+```sh
+claude plugin marketplace add coder/skills
+claude plugin install coder-skills@coder-skills
+claude plugin list
 ```
 
 **Codex**:
