@@ -12,20 +12,24 @@
   },
   "plugins": [
     {
-      "name": "coder",
-      "description": "Install and bootstrap a Coder (coder/coder) deployment end-to-end.",
+      "name": "Coder",
+      "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
       "version": "0.2.0",
       "author": {
         "name": "Coder",
-        "url": "https://coder.com"
+        "url": "https://coder.com",
+        "email": "support@coder.com"
       },
+      "license": "MIT",
       "homepage": "https://github.com/coder/skills",
       "repository": "https://github.com/coder/skills",
-      "category": "development",
       "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/setup"
+      "keywords": [
+        "skills",
+        "development",
+        "coder",
+        "remote development",
+        "devops"
       ]
     }
   ]

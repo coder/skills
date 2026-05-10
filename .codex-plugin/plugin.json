@@ -1,0 +1,40 @@
+{
+    "name": "Coder",
+    "version": "0.2.0",
+    "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
+    "author": {
+        "name": "Coder",
+        "url": "https://coder.com",
+        "email": "support@coder.com"
+    },
+    "homepage": "https://github.com/coder/skills",
+    "repository": "https://github.com/coder/skills",
+    "license": "MIT",
+    "keywords": [
+        "skills",
+        "development",
+        "coder",
+        "remote development",
+        "devops"
+    ],
+    "skills": "./skills/",
+    "interface": {
+        "displayName": "Coder",
+        "shortDescription": "Skills for installing, configuring, and operating Coder (coder/coder).",
+        "longDescription": "Skills for installing, configuring, and operating Coder (coder/coder).",
+        "developerName": "Coder",
+        "category": "Coding",
+        "websiteURL": "https://coder.com",
+        "privacyPolicyURL": "https://coder.com/legal/privacy-policy",
+        "termsOfServiceURL": "https://coder.com/legal/terms-of-service",
+        "capabilities": [
+            "Interactive",
+            "Read",
+            "Write"
+        ],
+        "defaultPrompt": [
+            "Set up Coder"
+        ],
+        "brandColor": "#000000"
+    }
+}
