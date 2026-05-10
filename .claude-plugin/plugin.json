@@ -1,0 +1,20 @@
+{
+  "name": "coder-skills",
+  "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
+  "version": "0.2.0",
+  "author": {
+    "name": "Coder",
+    "url": "https://coder.com",
+    "email": "support@coder.com"
+  },
+  "homepage": "https://github.com/coder/skills",
+  "repository": "https://github.com/coder/skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "development",
+    "coder",
+    "remote development",
+    "devops"
+  ]
+}
