@@ -1,0 +1,49 @@
+// markdownlint-cli2 config for this repo. See
+// https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md for the
+// full rule set.
+{
+  "config": {
+    // Start from the default rule set.
+    "default": true,
+
+    // Line length is enforced by hand-wrapping at ~70 chars in the source;
+    // code blocks and tables exceed 80 by design and the rule has no good way
+    // to ignore those.
+    "MD013": false,
+
+    // Bullet style: false-positive on wrapped sentences that contain a `+`.
+    "MD004": false,
+
+    // Allow duplicate headings under different parents (e.g. multiple
+    // "Logs / Stop" pairs, one per install mode).
+    "MD024": { "siblings_only": true },
+
+    // The skill embeds blockquoted lists with extra indent for readability
+    // ("> 1. ...", "> > inner"); MD027 fights that.
+    "MD027": false,
+
+    // Allow inline HTML for collapsible blocks and embedded images.
+    "MD033": { "allowed_elements": ["details", "summary", "br", "img"] },
+
+    // Bare URLs inside markdown table cells are easier to read than autolink
+    // notation; tolerate them.
+    "MD034": false,
+
+    // Skill files don't lead with an H1 by convention; the frontmatter is the
+    // canonical title.
+    "MD041": false,
+
+    // Table column alignment is more cosmetic than informative for tables
+    // that exceed terminal width; the source intent is more important.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules/**",
+    ".git/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".mux/**"
+  ]
+}

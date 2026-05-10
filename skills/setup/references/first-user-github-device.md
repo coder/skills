@@ -17,8 +17,7 @@ flags, no password to record. The first user to complete the
 flow becomes the deployment Owner because of the `userCount==0`
 rule in `coderd/userauth.go`.
 
-## Critical: run this in three separate tool calls, with the
-## user-facing message between them
+## Critical: run this in three separate tool calls, with the user-facing message between them
 
 This is the most common way the recipe is implemented wrong.
 

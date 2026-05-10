@@ -87,8 +87,7 @@ Durable fix: add `docker0` to
 better: switch the install to Docker compose so the server isn't
 on the host at all.
 
-## Embedded Postgres won't start (`libcrypto.so.1.1` ELF
-alignment failure on ARM / glibc 2.39+)
+## Embedded Postgres won't start (`libcrypto.so.1.1` ELF alignment failure on ARM / glibc 2.39+)
 
 Symptom: `coder server` exits seconds after starting with a
 log line like:

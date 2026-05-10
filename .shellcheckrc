@@ -1,0 +1,7 @@
+# shellcheck config for this repo. See https://www.shellcheck.net/wiki/Directive
+# for syntax. Disable per-file via `# shellcheck disable=SCxxxx` in the file.
+
+# SC2015: `A && B || C` is not if-then-else. We use this idiom intentionally in
+# trap-based cleanup blocks (`docker compose down ... || true`) where the goal
+# is "best effort, never propagate failure."
+disable=SC2015

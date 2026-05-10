@@ -130,6 +130,25 @@ this repo follows on top of that:
   harnesses (`test/run.sh`, `test/run-codex.sh`) are good
   templates.
 
+## Lint and format
+
+```sh
+make lint   # shellcheck, shfmt --diff, markdownlint, jq, claude plugin validate, no-emdash, SKILL.md description-length
+make fmt    # shfmt -w, markdownlint --fix, jq pretty-print
+```
+
+`make lint` is what runs in CI (`.github/workflows/lint.yml`).
+Lint configuration lives at the repo root: `.editorconfig`,
+`.markdownlint-cli2.jsonc`, `.shellcheckrc`. The shfmt flags
+(`-i 2 -ci`) are encoded in `scripts/lint.sh` and `scripts/fmt.sh`
+rather than a config file because shfmt has no native config
+format.
+
+The SKILL.md description-length check exists because Codex
+truncates the YAML `description` field at 1024 characters and
+silently drops the skill if truncation breaks the YAML. The
+lint catches that before it ships.
+
 ## License
 
 To be set by the publisher. Until then, treat as "all rights reserved".
