@@ -16,13 +16,17 @@ jobs:
 
       - name: Install shellcheck and shfmt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-          # shfmt is not in the default Ubuntu repos; pull a release binary.
-          SHFMT_VERSION=v3.10.0
-          curl -fsSL -o /usr/local/bin/shfmt \
+          # Pin both tools to specific versions so CI doesn't drift away
+          # from what `make lint` checks locally.
+          SC_VERSION=v0.10.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
+            | sudo tar -xJ --strip-components=1 -C /usr/local/bin "shellcheck-${SC_VERSION}/shellcheck"
+          SHFMT_VERSION=v3.12.0
+          sudo curl -fsSL -o /usr/local/bin/shfmt \
             "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
-          chmod +x /usr/local/bin/shfmt
+          sudo chmod +x /usr/local/bin/shfmt
+          shellcheck --version | head -2
+          shfmt --version
 
       - uses: actions/setup-node@v5
         with:
