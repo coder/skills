@@ -12,7 +12,7 @@
   },
   "plugins": [
     {
-      "name": "Coder",
+      "name": "coder-skills",
       "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
       "version": "0.2.0",
       "author": {

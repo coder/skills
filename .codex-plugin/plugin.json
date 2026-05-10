@@ -1,5 +1,5 @@
 {
-    "name": "Coder",
+    "name": "coder-skills",
     "version": "0.2.0",
     "description": "Skills for installing, configuring, and operating Coder (coder/coder).",
     "author": {
@@ -35,6 +35,8 @@
         "defaultPrompt": [
             "Set up Coder"
         ],
-        "brandColor": "#000000"
+        "brandColor": "#000000",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
     }
 }
