@@ -6,28 +6,20 @@ Skills for Claude Code, Codex, Cursor, and other coding agents to install, confi
 
 ## Usage
 
-**skills CLI**:
+Install with the [skills CLI](https://skills.sh):
 
 ```sh
 npx skills add coder/skills --global
 ```
 
-This installs every skill in this repository for the detected agent.
-Start a new agent session after installing. For Codex, verify with:
-
-```sh
-codex debug prompt-input 'noop' | rg 'setup:'
-```
-
-**Claude Code plugin marketplace**:
+Install with the [Claude Code plugin marketplace](https://claude.com/docs/plugins/marketplace):
 
 ```sh
 claude plugin marketplace add coder/skills
 claude plugin install coder-skills@coder-skills
-claude plugin list
 ```
 
-After installing, the skill activates automatically when you ask an agent to install or set up Coder.
+After installing, ask your agent to install or set up Coder.
 
 ## License
 
