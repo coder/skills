@@ -21,7 +21,7 @@ claude plugin install coder-skills@coder-skills
 
 After installing, ask your agent to install or set up Coder:
 
-```
+```text
 ╭────────────────────────────────────────────────────╮
 │ >_ OpenAI Codex (v0.130.0)                         │
 │                                                    │
