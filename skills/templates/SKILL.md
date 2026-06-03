@@ -180,6 +180,104 @@ Worth knowing because users ask for them often:
   the `dotfiles` module.
 - `vscode_binary_version`: optional pin for `code-server`.
 
+## variable vs. coder_parameter
+
+Use a Terraform `variable` (set via `--variable` at `coder templates
+push` time) for **infrastructure-level** choices that are fixed for
+the entire template deployment and set by the admin:
+
+- CPU architecture of the host machine (`arch`)
+- Storage pool or volume group name
+- Remote host identifier or cluster endpoint
+
+Use `data "coder_parameter"` for choices the **workspace user** makes
+at creation or build time:
+
+- OS image or distribution
+- CPU count, memory, and disk size
+- Any value that legitimately differs between workspaces
+
+Never expose infrastructure details as `coder_parameter`. Users
+should not need to know the host's CPU architecture or the name of
+a storage pool.
+
+```terraform
+# Good: arch is an admin concern, not a user choice
+variable "arch" {
+  description = "CPU architecture of the VM host (amd64 or arm64). Set at template push time."
+  type        = string
+  default     = "amd64"
+}
+
+# Good: image is a user choice made per workspace
+data "coder_parameter" "image" {
+  name    = "image"
+  type    = "string"
+  default = "ubuntu/noble/cloud"
+  option {
+    name  = "Ubuntu 24.04 LTS"
+    value = "ubuntu/noble/cloud"
+  }
+}
+```
+
+Pass `variable` values at push time:
+
+```sh
+coder templates push my-template -d . --yes \
+  --variable arch=arm64 \
+  --variable storage_pool=fast-nvme
+```
+
+## Deprecated coder_agent Fields
+
+Do not set `dir` on `coder_agent`. It is deprecated in recent
+provider versions, generates warnings on every `coder templates push`,
+and breaks Coder Desktop file sync. The agent always starts in
+`$HOME` by default.
+
+```terraform
+# Wrong: deprecated, causes warnings
+resource "coder_agent" "main" {
+  dir = "/home/${local.username}"
+}
+
+# Correct: omit dir entirely
+resource "coder_agent" "main" {
+  arch = var.arch
+  os   = "linux"
+}
+```
+
+## Contributing Templates to coder/registry
+
+Before opening a PR, read the registry's
+[AGENTS.md](https://github.com/coder/registry/blob/main/AGENTS.md)
+for code style, structure requirements, and the full PR review
+checklist. Also read the
+[PR template](https://github.com/coder/registry/blob/main/.github/PULL_REQUEST_TEMPLATE.md)
+for the required PR body format.
+
+Additional points specific to templates (not covered in AGENTS.md):
+
+- Templates live at `registry/<namespace>/templates/<name>/` with
+  `main.tf` and `README.md`. No `.tftest.hcl` is required (only
+  modules need tests).
+- PR title convention: `feat(<namespace>/templates/<name>): <short
+  description>` (e.g. `feat(bpmct/templates/incus-vm): add Incus VM
+  template`).
+- **Sync your fork's `main` with upstream before branching.**
+  If you don't, the PR diff will show all pre-existing files in your
+  namespace as new additions rather than just your changes:
+
+  ```sh
+  gh api -X POST /repos/<your-username>/registry/merge-upstream \
+    -f branch=main
+  ```
+
+- Run `bun fmt` (which runs `terraform fmt` + Prettier) and confirm
+  it produces no diff before pushing.
+
 ## Safeguards
 
 - Do not push a template version that has not passed `terraform
