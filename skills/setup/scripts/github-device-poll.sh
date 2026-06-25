@@ -48,6 +48,7 @@ trap cleanup_scratch EXIT
 # {"redirect_url": "..."} and a Set-Cookie:
 # coder_session_token=... header that's the admin's session.
 DEADLINE=$(($(date +%s) + EXPIRES_IN))
+echo "Polling Coder for sign-in completion; responses captured to $RESP" >&2
 while :; do
   HTTP=$(curl -sS -o "$RESP" -w '%{http_code}' \
     --cookie "$JAR" --cookie-jar "$JAR" \
@@ -92,7 +93,9 @@ TOKEN="$(awk '$6 == "coder_session_token" { print $7 }' "$JAR" | tail -1)"
 CFG="${CODER_CONFIG_DIR:-$HOME/.config/coderv2}"
 mkdir -p "$CFG"
 umask 0077
+echo "Writing Coder server URL to $CFG/url" >&2
 printf '%s' "$ACCESS_URL" >"$CFG/url"
+echo "Writing Coder admin session token to $CFG/session" >&2
 printf '%s' "$TOKEN" >"$CFG/session"
 
 # Verify the CLI is signed in as the admin. (Scratch files are

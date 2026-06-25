@@ -42,6 +42,7 @@ trap cleanup_on_failure EXIT
 #     oauth_pkce_verifier cookies. We don't follow the redirect;
 #     we just need the cookies and the state value from the
 #     Location header.
+echo "Saving GitHub OAuth cookies to $JAR" >&2
 LOC="$(curl -sS -D - -o /dev/null \
   --cookie-jar "$JAR" --max-redirs 0 \
   "$ACCESS_URL/api/v2/users/oauth2/github/callback" |
@@ -60,6 +61,7 @@ DEV_JSON="$(curl -sSf "$ACCESS_URL/api/v2/users/oauth2/github/device")"
 # 1c. Write the values to a state file the agent and step 3 will
 #     read. Plain shell-source format so the polling step can
 #     `. "$STATE_DIR/github-device.env"`.
+echo "Writing GitHub device-code parameters to $DEV_FILE" >&2
 python3 - "$DEV_JSON" "$STATE" <<'PY' >"$DEV_FILE"
 import json, sys, shlex
 d = json.loads(sys.argv[1])
