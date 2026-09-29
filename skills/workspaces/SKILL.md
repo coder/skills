@@ -1,5 +1,5 @@
 ---
-name: coder-workspaces
+name: workspaces
 description: >
   Use an existing Coder deployment from the command line with the
   `coder` CLI: list, inspect, create, start, stop, and delete
