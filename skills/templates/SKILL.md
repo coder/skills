@@ -229,25 +229,29 @@ coder templates push my-template -d . --yes \
   --variable storage_pool=fast-nvme
 ```
 
-## Deprecated coder_agent Fields
+## Setting coder_agent dir
 
-Do not set `dir` on `coder_agent`. It is deprecated in recent
-provider versions, generates warnings on every `coder templates push`,
-and breaks Coder Desktop file sync. The agent always starts in
-`$HOME` by default.
+`dir` on `coder_agent` is optional and defaults to `$HOME`. It sets the
+starting directory for SSH and web terminal sessions and the folder the
+built-in VS Code apps open. Set it when users should land in a project
+checkout, and omit it otherwise.
 
 ```terraform
-# Wrong: deprecated, causes warnings
-resource "coder_agent" "main" {
-  dir = "/home/${local.username}"
-}
-
-# Correct: omit dir entirely
 resource "coder_agent" "main" {
   arch = var.arch
   os   = "linux"
+  dir  = "/home/${local.username}/project"
 }
 ```
+
+- SFTP and `scp` resolve relative and `~/`-prefixed paths against `dir`,
+  so use absolute paths for file transfers.
+- Coder provider versions 2.17 through 2.19 mark `dir` as deprecated and
+  warn when it is set to anything other than `$HOME`. Version 2.20.0
+  removed the deprecation, so you can ignore that warning.
+- Coder Desktop file sync works with any `dir` on macOS v0.8.4 or later
+  and Windows v0.8.5 or later. Older Desktop versions fail to start file
+  sync when `dir` is not `$HOME`.
 
 ## Contributing Templates to coder/registry
 
