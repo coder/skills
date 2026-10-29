@@ -1,4 +1,4 @@
-# coder-workspace
+# coder-workspace-status
 
 **For Claude Code only** (2.1.287 or later). It uses Claude Code's plugin
 and mod APIs, so other agents can't install or run it.
@@ -33,7 +33,7 @@ Outside a Coder workspace it does nothing.
 The line refreshes after every shell command, at the end of every turn, and
 every 5 seconds. In a narrow window, whole items move to the next line.
 
-### `/coder-workspace`
+### `/coder-workspace-status`
 
 Draws the full card at once, without a model turn:
 
@@ -70,7 +70,7 @@ In the workspace:
 
 ```sh
 claude plugin marketplace add coder/skills
-claude plugin install coder-workspace@coder-skills
+claude plugin install coder-workspace-status@coder-skills
 ```
 
 To install it in every workspace from a template, run the same two

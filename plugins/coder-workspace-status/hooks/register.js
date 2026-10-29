@@ -181,7 +181,7 @@ function repoWords(r) {
 }
 
 // Only ports opened during the session: the ones the workspace started with
-// are its apps, and /coder-workspace lists them.
+// are its apps, and /coder-workspace-status lists them.
 function newPorts(s) {
   return s.ports.filter((p) => p.new)
 }
@@ -196,9 +196,9 @@ function plainLine(s) {
   return parts.join(' · ')
 }
 
-// ---------- /coder-workspace: the full card ----------
+// ---------- /coder-workspace-status: the full card ----------
 
-const COMMAND = 'coder-workspace'
+const COMMAND = 'coder-workspace-status'
 
 // units lays out elements in a row that wraps between them, never inside one,
 // with a dim separator after each but the last.

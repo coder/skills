@@ -6,7 +6,7 @@
 #   context  SessionStart hook (the hook's JSON input on stdin): facts about
 #            the workspace for Claude, and the session's port baseline.
 #   json     The status as JSON, for the mod that draws it.
-#   text     The full card as plain text, for /coder-workspace.
+#   text     The full card as plain text, for /coder-workspace-status.
 #
 # Outside a Coder workspace every mode prints nothing and exits 0. Every
 # failure is swallowed: a status line must never get in the way of a session.
@@ -14,7 +14,7 @@
 # Environment knobs:
 #   CODER_STATUS_IGNORE_PORTS  space-separated ports never reported
 #   CODER_STATUS_WARN_PCT      memory/disk percentage that warns (default 90)
-#   CODER_STATUS_CMD           the status command to mention (/coder-workspace)
+#   CODER_STATUS_CMD           the status command to mention (/coder-workspace-status)
 
 set -uo pipefail
 export LC_ALL=C
@@ -24,7 +24,7 @@ input=""
 if [ "$mode" = "context" ] && [ ! -t 0 ]; then
   input="$(cat 2>/dev/null || true)"
 fi
-status_cmd="${CODER_STATUS_CMD:-/coder-workspace}"
+status_cmd="${CODER_STATUS_CMD:-/coder-workspace-status}"
 
 [ "${CODER:-}" = "true" ] || exit 0
 [ -n "${CODER_WORKSPACE_NAME:-}" ] || exit 0
@@ -74,7 +74,7 @@ plural() { # plural N word -> "N word" or "N words"
 # ---------- facts ----------
 
 session_id="$(json_field session_id)"
-# /coder-workspace passes the session id as an argument; an unexpanded
+# /coder-workspace-status passes the session id as an argument; an unexpanded
 # placeholder is ignored.
 case "${2:-}" in "" | *'$'*) ;; *) [ -n "$session_id" ] || session_id="$2" ;; esac
 [ -n "$session_id" ] || session_id="${CLAUDE_SESSION_ID:-}"
@@ -398,9 +398,9 @@ claude_context() {
 
 # ---------- session state ----------
 
-# Not CLAUDE_PLUGIN_DATA: hooks get it but /coder-workspace does not, and both
-# have to find the same files.
-state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coder-workspace"
+# Not CLAUDE_PLUGIN_DATA: hooks get it but /coder-workspace-status does
+# not, and both have to find the same files.
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coder-workspace-status"
 baseline_file="$state_dir/${session_id:-default}.ports"
 # Without a session id (coder-status text run by hand), the newest baseline is
 # the one to use.
