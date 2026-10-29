@@ -10,4 +10,5 @@ First release.
   ports, startup scripts, schedule, repositories, and resources.
 - Apps and startup script names from the agent's manifest, with no token.
 - Desktop-safe links (`%40` for dashboard pages, lowercase app hosts).
+- Git worktrees show their repository's name, not the worktree directory.
 - Session-start context for Claude: preview URL pattern and workspace links.

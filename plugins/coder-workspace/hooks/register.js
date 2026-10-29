@@ -297,7 +297,7 @@ function cardView($, e, s) {
     const words = repoWords(r)
     return [
       Text({ children: [r.name + ' '] }),
-      Text({ dimColor: true, children: [r.branch] }),
+      Text({ dimColor: true, children: [r.branch + (r.worktree ? ' (worktree)' : '')] }),
       words.length ? Text({ color: 'warning', children: [' ' + words.join(' ')] }) : Text({ color: 'success', children: [' ✓'] }),
     ]
   }))

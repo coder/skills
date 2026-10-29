@@ -207,9 +207,31 @@ list_repos() {
   done
 }
 
-# repo_state ROOT prints "NAME<TAB>BRANCH<TAB>CHANGED<TAB>UNPUSHED<TAB>UPSTREAM".
+# repo_where ROOT prints "NAME<TAB>WORKTREE": the repository's name, from its
+# main checkout, and whether ROOT is a linked worktree of it. A worktree, such
+# as one Claude Code makes under .claude/worktrees/, then reads as the
+# repository it belongs to instead of as its own directory.
+repo_where() {
+  local top="$1" gitdir common name
+  gitdir="$(cd "$top" 2>/dev/null && cd "$(gitc rev-parse --git-dir)" 2>/dev/null && pwd -P)"
+  common="$(cd "$top" 2>/dev/null && cd "$(gitc rev-parse --git-common-dir)" 2>/dev/null && pwd -P)"
+  case "$common" in
+    "") name="$(basename "$top")" ;;
+    */.git) name="$(basename "$(dirname "$common")")" ;;
+    *) name="$(basename "${common%.git}")" ;;
+  esac
+  if [ -n "$common" ] && [ "$gitdir" != "$common" ]; then
+    printf '%s\ttrue\n' "$name"
+  else
+    printf '%s\tfalse\n' "$name"
+  fi
+}
+
+# repo_state ROOT prints
+# "NAME<TAB>BRANCH<TAB>WORKTREE<TAB>CHANGED<TAB>UNPUSHED<TAB>UPSTREAM". UPSTREAM
+# goes last because it can be empty, and read collapses empty tab fields.
 repo_state() {
-  local top="$1" branch changed unpushed upstream
+  local top="$1" branch changed unpushed upstream name worktree
   branch="$(gitc -C "$top" symbolic-ref --short -q HEAD || gitc -C "$top" rev-parse --short HEAD || echo '?')"
   changed="$(gitc -C "$top" status --porcelain | wc -l | tr -d ' ')"
   if upstream="$(gitc -C "$top" rev-parse --abbrev-ref --symbolic-full-name '@{u}')"; then
@@ -218,7 +240,8 @@ repo_state() {
     upstream=""
     unpushed="$(gitc -C "$top" rev-list --count HEAD --not --remotes || echo 0)"
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$(basename "$top")" "$branch" "${changed:-0}" "${unpushed:-0}" "$upstream"
+  IFS="$(printf '\t')" read -r name worktree <<<"$(repo_where "$top")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$branch" "$worktree" "${changed:-0}" "${unpushed:-0}" "$upstream"
 }
 
 # mem_pct prints memory in use as a percentage of the workspace's limit,
@@ -268,8 +291,8 @@ ports_lines() { # ports_lines PORTS_TSV -> one line per port
 }
 
 repo_line() { # repo_line STATE_TSV
-  local name branch changed unpushed upstream parts=() out="" p
-  IFS="$(printf '\t')" read -r name branch changed unpushed upstream <<<"$1"
+  local name branch changed unpushed upstream worktree parts=() out="" p
+  IFS="$(printf '\t')" read -r name branch worktree changed unpushed upstream <<<"$1"
   [ "$changed" -gt 0 ] 2>/dev/null && parts+=("$(plural "$changed" "uncommitted change")")
   if [ "$unpushed" -gt 0 ] 2>/dev/null; then
     parts+=("$(plural "$unpushed" "unpushed commit")")
@@ -278,9 +301,10 @@ repo_line() { # repo_line STATE_TSV
   fi
   [ "${#parts[@]}" -gt 0 ] || parts=("committed and pushed")
   for p in "${parts[@]}"; do out="${out:+$out, }$p"; done
-  printf '  %s on %s: %s\n' "$name" "$branch" "$out"
+  printf '  %s on %s%s: %s\n' "$name" "$branch" "$([ "$worktree" = true ] && printf ' (worktree)')" "$out"
 }
 
+# card [full] prints the status card. The full card adds apps, startup
 # scripts, autostop, resources, and Cursor.
 card() {
   local full="${1:-}" repos r ports new old m d port proc n=0 others="" api apps app_ports=" "
@@ -628,7 +652,7 @@ scripts_json() {
 # status_json prints the status for the mod. Each port says whether it opened
 # since the session started (new) or was already listening.
 status_json() {
-  local r name branch changed unpushed upstream port proc u first=true others=0 m d is_new
+  local r name branch changed unpushed upstream worktree port proc u first=true others=0 m d is_new
   printf '{"workspace":%s,"agent":%s,"dashboard":%s,"terminal":%s,"vscode":%s,"warnPct":%s,"command":%s' \
     "$(printf '%s' "$ws_label" | json_str)" "$(printf '%s' "$agent" | json_str)" \
     "$(printf '%s' "$dashboard_url" | json_str)" "$(printf '%s' "$terminal_url" | json_str)" \
@@ -639,12 +663,12 @@ status_json() {
   printf ',"mem":%s,"disk":%s,"repos":[' "${m:-null}" "${d:-null}"
   while read -r r; do
     [ -n "$r" ] || continue
-    IFS="$(printf '\t')" read -r name branch changed unpushed upstream <<<"$(repo_state "$r")"
+    IFS="$(printf '\t')" read -r name branch worktree changed unpushed upstream <<<"$(repo_state "$r")"
     $first || printf ','
     first=false
-    printf '{"name":%s,"branch":%s,"changed":%s,"unpushed":%s,"upstream":%s}' \
+    printf '{"name":%s,"branch":%s,"changed":%s,"unpushed":%s,"upstream":%s,"worktree":%s}' \
       "$(printf '%s' "$name" | json_str)" "$(printf '%s' "$branch" | json_str)" \
-      "${changed:-0}" "${unpushed:-0}" "$(printf '%s' "$upstream" | json_str)"
+      "${changed:-0}" "${unpushed:-0}" "$(printf '%s' "$upstream" | json_str)" "$([ "$worktree" = true ] && echo true || echo false)"
   done <<<"$(list_repos)"
   printf '],"ports":['
   first=true

@@ -26,7 +26,8 @@ Outside a Coder workspace it does nothing.
   (`✗ Dev server exit 1`), high memory or disk, a template update.
 - **Autostop** shows dim when it's hours away, yellow within the hour, red
   within 10 minutes.
-- **Repositories** show the branch and uncommitted or unpushed work.
+- **Repositories** show the branch and uncommitted or unpushed work. A git
+  worktree, like the ones Claude Code creates, shows its repository's name.
 - **Ports** opened during the session link to their preview URLs.
 
 The line refreshes after every shell command, at the end of every turn, and
