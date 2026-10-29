@@ -1,0 +1,19 @@
+{
+  "name": "coder-workspace",
+  "description": "Claude Code only: shows the Coder workspace Claude Code runs in above the prompt (health, apps, startup scripts, autostop, ports, unpushed work).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Coder",
+    "url": "https://coder.com",
+    "email": "support@coder.com"
+  },
+  "homepage": "https://github.com/coder/skills",
+  "repository": "https://github.com/coder/skills",
+  "license": "MIT",
+  "keywords": [
+    "coder",
+    "workspace",
+    "status",
+    "remote development"
+  ]
+}
