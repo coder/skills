@@ -1,0 +1,17 @@
+{
+  "description": "Coder workspace status: a line above the prompt, and workspace facts for Claude.",
+  "modules": ["./register.js"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/coder-status\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

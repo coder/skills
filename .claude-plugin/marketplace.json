@@ -31,6 +31,26 @@
         "remote development",
         "devops"
       ]
+    },
+    {
+      "name": "coder-workspace-status",
+      "description": "Claude Code only: shows the Coder workspace Claude Code runs in above the prompt (health, apps, startup scripts, autostop, ports, unpushed work).",
+      "version": "0.1.0",
+      "author": {
+        "name": "Coder",
+        "url": "https://coder.com",
+        "email": "support@coder.com"
+      },
+      "license": "MIT",
+      "homepage": "https://github.com/coder/skills",
+      "repository": "https://github.com/coder/skills",
+      "source": "./plugins/coder-workspace-status",
+      "keywords": [
+        "coder",
+        "workspace",
+        "status",
+        "remote development"
+      ]
     }
   ]
 }

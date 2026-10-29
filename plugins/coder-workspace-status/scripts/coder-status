@@ -1,0 +1,720 @@
+#!/usr/bin/env bash
+# Coder workspace status for Claude Code.
+#
+# Modes:
+#
+#   context  SessionStart hook (the hook's JSON input on stdin): facts about
+#            the workspace for Claude, and the session's port baseline.
+#   json     The status as JSON, for the mod that draws it.
+#   text     The full card as plain text, for /coder-workspace-status.
+#
+# Outside a Coder workspace every mode prints nothing and exits 0. Every
+# failure is swallowed: a status line must never get in the way of a session.
+#
+# Environment knobs:
+#   CODER_STATUS_IGNORE_PORTS  space-separated ports never reported
+#   CODER_STATUS_WARN_PCT      memory/disk percentage that warns (default 90)
+#   CODER_STATUS_CMD           the status command to mention (/coder-workspace-status)
+
+set -uo pipefail
+export LC_ALL=C
+
+mode="${1:-text}"
+input=""
+if [ "$mode" = "context" ] && [ ! -t 0 ]; then
+  input="$(cat 2>/dev/null || true)"
+fi
+status_cmd="${CODER_STATUS_CMD:-/coder-workspace-status}"
+
+[ "${CODER:-}" = "true" ] || exit 0
+[ -n "${CODER_WORKSPACE_NAME:-}" ] || exit 0
+
+# ---------- helpers ----------
+
+# json_field NAME prints the string value of a top-level field of the hook input.
+json_field() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
+  else
+    printf '%s' "$input" | tr -d '\n' |
+      sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1
+  fi
+}
+
+# json_str reads stdin and prints it as one JSON string literal.
+json_str() {
+  awk 'BEGIN { ORS = ""; print "\"" }
+	{
+		gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "")
+		if (NR > 1) print "\\n"
+		print
+	}
+	END { print "\"" }'
+}
+
+urlenc() {
+  local s="$1" out="" c i
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9.~_-]) out+="$c" ;;
+      *)
+        printf -v c '%%%02X' "'$c"
+        out+="$c"
+        ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+plural() { # plural N word -> "N word" or "N words"
+  if [ "$1" = "1" ]; then printf '1 %s' "$2"; else printf '%s %ss' "$1" "$2"; fi
+}
+
+# ---------- facts ----------
+
+session_id="$(json_field session_id)"
+# /coder-workspace-status passes the session id as an argument; an unexpanded
+# placeholder is ignored.
+case "${2:-}" in "" | *'$'*) ;; *) [ -n "$session_id" ] || session_id="$2" ;; esac
+[ -n "$session_id" ] || session_id="${CLAUDE_SESSION_ID:-}"
+cwd="$(json_field cwd)"
+[ -n "$cwd" ] || cwd="$PWD"
+source_kind="$(json_field source)"
+
+owner="${CODER_WORKSPACE_OWNER_NAME:-}"
+ws="${CODER_WORKSPACE_NAME:-}"
+agent="${CODER_WORKSPACE_AGENT_NAME:-}"
+url="${CODER_URL:-${CODER_AGENT_URL:-}}"
+url="${url%/}"
+# lower prints its argument in lowercase.
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+# Hostnames ignore case, and the Desktop app opens only links spelled the way
+# a browser spells them, which means a lowercase host. VSCODE_PROXY_URI has no
+# path, so all of it goes lowercase.
+port_uri="$(lower "${VSCODE_PROXY_URI:-}")"
+warn_pct="${CODER_STATUS_WARN_PCT:-90}"
+
+ws_label="$owner/$ws"
+dashboard_url=""
+terminal_url=""
+vscode_url=""
+cursor_url=""
+if [ -n "$url" ]; then
+  dashboard_url="$url/@$owner/$ws"
+  terminal_url="$url/@$owner/$ws${agent:+.$agent}/terminal"
+  q="owner=$(urlenc "$owner")&workspace=$(urlenc "$ws")${agent:+&agent=$(urlenc "$agent")}&url=$(urlenc "$url")&folder=$(urlenc "$cwd")"
+  vscode_url="vscode://coder.coder-remote/open?$q"
+  cursor_url="cursor://coder.coder-remote/open?$q"
+fi
+
+# preview_url PORT prints the URL that forwards to PORT, if the deployment has
+# a wildcard app hostname.
+preview_url() {
+  [ -n "$port_uri" ] || return 1
+  printf '%s' "${port_uri//\{\{port\}\}/$1}"
+}
+preview_pattern=""
+if [ -n "$port_uri" ]; then
+  preview_pattern="${port_uri//\{\{port\}\}/<port>}"
+fi
+
+# list_ports prints "PORT<TAB>PROCESS" for each TCP port something listens on,
+# leaving out Coder's and Claude's own listeners and the ephemeral range.
+list_ports() {
+  local ignore=" ${CODER_STATUS_IGNORE_PORTS:-22 2112 2113 3286 6060} " tab
+  tab="$(printf '\t')"
+  {
+    if command -v ss >/dev/null 2>&1; then
+      ss -Hltnp 2>/dev/null | awk '{
+				n = split($4, a, ":"); proc = ""; pid = ""
+				if (match($0, /users:\(\("[^"]+"/)) proc = substr($0, RSTART + 9, RLENGTH - 10)
+				if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
+				print a[n] "\t" proc "\t" pid
+			}'
+    else
+      awk 'FNR > 1 && $4 == "0A" { split($2, a, ":"); print a[2] }' /proc/net/tcp /proc/net/tcp6 2>/dev/null |
+        while read -r hex; do printf '%d\t\t\n' "$((16#$hex))"; done
+    fi
+  } | sort -t"$tab" -k1,1n -u | while IFS="$tab" read -r port proc pid; do
+    case "$port" in '' | *[!0-9]*) continue ;; esac
+    [ "$port" -lt 32768 ] || continue
+    case "$ignore" in *" $port "*) continue ;; esac
+    case "$(proc_label "$proc" "$pid")" in coder | coder.* | coder_* | claude) continue ;; esac
+    printf '%s\t%s\n' "$port" "$(proc_label "$proc" "$pid")"
+  done
+}
+
+# proc_label COMM PID names a listener: the command name, plus the script or
+# module for interpreters, so "node" reads "node vite".
+proc_label() {
+  local comm="$1" pid="$2" arg skip=false
+  # The kernel cuts command names at 15 characters; argv[0] has the full name.
+  if [ "${#comm}" -eq 15 ] && [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
+    IFS= read -r -d "" arg <"/proc/$pid/cmdline" && [ -n "$arg" ] && comm="$(basename "${arg%% *}")"
+  fi
+  case "$comm" in
+    node | nodejs | bun | deno | python | python3* | ruby | java | php | perl | sh | bash) ;;
+    *" ("*)
+      case "$comm" in *")"*) ;; *) comm="${comm%% (*}" ;; esac
+      printf "%s" "$comm"
+      return
+      ;;
+    *)
+      printf '%s' "$comm"
+      return
+      ;;
+  esac
+  [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] || {
+    printf '%s' "$comm"
+    return
+  }
+  while IFS= read -r -d '' arg; do
+    if $skip; then
+      skip=false
+      continue
+    fi
+    case "$arg" in
+      -m)
+        skip=false
+        continue
+        ;;
+      -*) continue ;;
+    esac
+    case "$(basename "$arg")" in "$comm" | node | python* | bun | deno) continue ;; esac
+    printf '%s %s' "$comm" "$(basename "$arg")"
+    return
+  done <"/proc/$pid/cmdline"
+  printf '%s' "$comm"
+}
+
+gitc() { timeout 3 git -c safe.directory='*' -c core.quotepath=off "$@" 2>/dev/null; }
+
+# list_repos prints the repository roots to report: the one holding cwd, or
+# the repositories directly under cwd when cwd is not in one.
+list_repos() {
+  command -v git >/dev/null 2>&1 || return 0
+  local top d n=0
+  if top="$(gitc -C "$cwd" rev-parse --show-toplevel)"; then
+    echo "$top"
+    return 0
+  fi
+  for d in "$cwd"/*/; do
+    [ -e "$d/.git" ] || continue
+    echo "${d%/}"
+    n=$((n + 1))
+    [ "$n" -lt 5 ] || break
+  done
+}
+
+# repo_where ROOT prints "NAME<TAB>WORKTREE": the repository's name, from its
+# main checkout, and whether ROOT is a linked worktree of it. A worktree, such
+# as one Claude Code makes under .claude/worktrees/, then reads as the
+# repository it belongs to instead of as its own directory.
+repo_where() {
+  local top="$1" gitdir common name
+  gitdir="$(cd "$top" 2>/dev/null && cd "$(gitc rev-parse --git-dir)" 2>/dev/null && pwd -P)"
+  common="$(cd "$top" 2>/dev/null && cd "$(gitc rev-parse --git-common-dir)" 2>/dev/null && pwd -P)"
+  case "$common" in
+    "") name="$(basename "$top")" ;;
+    */.git) name="$(basename "$(dirname "$common")")" ;;
+    *) name="$(basename "${common%.git}")" ;;
+  esac
+  if [ -n "$common" ] && [ "$gitdir" != "$common" ]; then
+    printf '%s\ttrue\n' "$name"
+  else
+    printf '%s\tfalse\n' "$name"
+  fi
+}
+
+# repo_state ROOT prints
+# "NAME<TAB>BRANCH<TAB>WORKTREE<TAB>CHANGED<TAB>UNPUSHED<TAB>UPSTREAM". UPSTREAM
+# goes last because it can be empty, and read collapses empty tab fields.
+repo_state() {
+  local top="$1" branch changed unpushed upstream name worktree
+  branch="$(gitc -C "$top" symbolic-ref --short -q HEAD || gitc -C "$top" rev-parse --short HEAD || echo '?')"
+  changed="$(gitc -C "$top" status --porcelain | wc -l | tr -d ' ')"
+  if upstream="$(gitc -C "$top" rev-parse --abbrev-ref --symbolic-full-name '@{u}')"; then
+    unpushed="$(gitc -C "$top" rev-list --count '@{u}..HEAD' || echo 0)"
+  else
+    upstream=""
+    unpushed="$(gitc -C "$top" rev-list --count HEAD --not --remotes || echo 0)"
+  fi
+  IFS="$(printf '\t')" read -r name worktree <<<"$(repo_where "$top")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$branch" "$worktree" "${changed:-0}" "${unpushed:-0}" "$upstream"
+}
+
+# mem_pct prints memory in use as a percentage of the workspace's limit,
+# without reclaimable page cache.
+mem_pct() {
+  local cur max inactive total avail
+  if [ -r /sys/fs/cgroup/memory.current ] && max="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)" &&
+    [ -n "$max" ] && [ "$max" != "max" ]; then
+    cur="$(cat /sys/fs/cgroup/memory.current)"
+    inactive="$(awk '$1 == "inactive_file" { print $2 }' /sys/fs/cgroup/memory.stat 2>/dev/null)"
+    cur=$((cur - ${inactive:-0}))
+    [ "$max" -gt 0 ] && echo $((cur * 100 / max))
+    return 0
+  fi
+  total="$(awk '$1 == "MemTotal:" { print $2 }' /proc/meminfo 2>/dev/null)"
+  avail="$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo 2>/dev/null)"
+  [ -n "$total" ] && [ -n "$avail" ] && [ "$total" -gt 0 ] && echo $(((total - avail) * 100 / total))
+}
+
+disk_pct() {
+  df -P "$cwd" 2>/dev/null | awk 'NR == 2 { sub(/%/, "", $5); print $5 }'
+}
+
+# listening prints every TCP port something listens on, one per line, for
+# telling whether an app's server is up.
+listening() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -Hltn 2>/dev/null | awk '{ n = split($4, a, ":"); print a[n] }'
+  else
+    awk 'FNR > 1 && $4 == "0A" { split($2, a, ":"); print a[2] }' /proc/net/tcp /proc/net/tcp6 2>/dev/null |
+      while read -r hex; do echo "$((16#$hex))"; done
+  fi | sort -un
+}
+
+# ---------- rendering ----------
+
+ports_lines() { # ports_lines PORTS_TSV -> one line per port
+  local port proc u
+  while IFS="$(printf '\t')" read -r port proc; do
+    [ -n "$port" ] || continue
+    if u="$(preview_url "$port")"; then
+      printf '  :%s%s  %s\n' "$port" "${proc:+ ($proc)}" "$u"
+    else
+      printf '  :%s%s  coder port-forward %s --tcp %s:%s\n' "$port" "${proc:+ ($proc)}" "$ws" "$port" "$port"
+    fi
+  done <<<"$1"
+}
+
+repo_line() { # repo_line STATE_TSV
+  local name branch changed unpushed upstream worktree parts=() out="" p
+  IFS="$(printf '\t')" read -r name branch worktree changed unpushed upstream <<<"$1"
+  [ "$changed" -gt 0 ] 2>/dev/null && parts+=("$(plural "$changed" "uncommitted change")")
+  if [ "$unpushed" -gt 0 ] 2>/dev/null; then
+    parts+=("$(plural "$unpushed" "unpushed commit")")
+  elif [ -z "$upstream" ]; then
+    parts+=("no upstream branch")
+  fi
+  [ "${#parts[@]}" -gt 0 ] || parts=("committed and pushed")
+  for p in "${parts[@]}"; do out="${out:+$out, }$p"; done
+  printf '  %s on %s%s: %s\n' "$name" "$branch" "$([ "$worktree" = true ] && printf ' (worktree)')" "$out"
+}
+
+# card [full] prints the status card. The full card adds apps, startup
+# scripts, autostop, resources, and Cursor.
+card() {
+  local full="${1:-}" repos r ports new old m d port proc n=0 others="" api apps app_ports=" "
+  if [ -n "$url" ]; then
+    printf 'Open it:\n'
+    printf '  Dashboard  %s\n' "$dashboard_url"
+    printf '  VS Code    %s\n' "$vscode_url"
+    [ -n "$full" ] && printf '  Cursor     %s\n' "$cursor_url"
+    printf '  Terminal   %s\n' "$terminal_url"
+  fi
+  if [ -n "$full" ] && command -v jq >/dev/null 2>&1; then
+    apps="$(apps_json)"
+    printf '%s' "$apps" | jq -r '
+			if length > 0 then "Apps:", (.[] | "  " + .name + (if .url then "  " + .url else "" end) +
+				(if .up == false then "  (nothing listening on :\(.port))" elif .health == "unhealthy" then "  (unhealthy)" else "" end))
+			else empty end' 2>/dev/null
+    app_ports=" $(printf '%s' "$apps" | jq -r '.[].port // empty' 2>/dev/null | tr '\n' ' ') "
+    scripts_json | jq -r '
+			if (.list | length) > 0 then (if .named then "Startup scripts: " else "Scripts: " end) + ([.list[] | .name + " " +
+				(if .status == "ok" then "✓" elif .status == "running" then "running" elif .status == "unknown" then "?"
+				else "✗ " + .status + (if .exit then " (exit \(.exit))" else "" end) end)] | join(", ")) else empty end' 2>/dev/null
+    # From the Coder API, when the coder CLI is logged in.
+    api="$(workspace_api)"
+    if [ -n "$api" ]; then
+      printf '%s' "$api" | jq -r '
+				(if .stopsAt then "Autostop: " + (.stopsAt | strflocaltime("%H:%M %Z")) else empty end),
+				(if .outdated then "Template: a newer version is available; restart the workspace to update" else empty end)' 2>/dev/null
+    fi
+  fi
+  repos="$(list_repos)"
+  if [ -n "$repos" ]; then
+    printf 'Repositories:\n'
+    while read -r r; do [ -n "$r" ] && repo_line "$(repo_state "$r")"; done <<<"$repos"
+  fi
+
+  # Ports opened during this session get their preview URLs; listeners the
+  # workspace started with (desktops, terminals) are listed in one line.
+  # Ports an app serves are in the apps list already.
+  ports="$(list_ports)"
+  new=""
+  old=""
+  while IFS="$(printf '\t')" read -r port proc; do
+    [ -n "$port" ] || continue
+    case "$app_ports" in *" $port "*) continue ;; esac
+    if [ -f "$baseline_file" ] && ! grep -qx "$port" "$baseline_file"; then
+      new+="$port	$proc"$'\n'
+    else
+      old+="$port	$proc"$'\n'
+    fi
+  done <<<"$ports"
+  if [ -n "$new" ]; then
+    printf 'Started in this session:\n'
+    ports_lines "$new"
+  fi
+  if [ -n "$preview_pattern" ]; then
+    printf 'Previews: a server on a port opens at %s\n' "$preview_pattern"
+  fi
+  while IFS="$(printf '\t')" read -r port proc; do
+    [ -n "$port" ] || continue
+    n=$((n + 1))
+    [ "$n" -le 8 ] && others="${others:+$others, }:$port${proc:+ $proc}"
+  done <<<"$old"
+  if [ -n "$others" ]; then
+    [ "$n" -gt 8 ] && others+=", and $((n - 8)) more"
+    printf 'Already listening: %s\n' "$others"
+  fi
+
+  m="$(mem_pct)"
+  d="$(disk_pct)"
+  if [ -n "$full" ] && [ -n "$m$d" ]; then
+    printf 'Resources: %s%s%s\n' "${m:+memory $m%}" "${m:+${d:+, }}" "${d:+disk $d%}"
+  fi
+  [ -n "$m" ] && [ "$m" -ge "$warn_pct" ] && printf 'Warning: memory is at %s%% of this workspace'"'"'s limit.\n' "$m"
+  [ -n "$d" ] && [ "$d" -ge "$warn_pct" ] && printf 'Warning: the disk is %s%% full.\n' "$d"
+}
+
+# claude_context prints facts for Claude's context at session start.
+claude_context() {
+  printf 'This session runs in the Coder workspace %s%s.' "$ws_label" "${agent:+ (agent $agent)}"
+  printf '\n'
+  if [ -n "$preview_pattern" ]; then
+    printf -- '- The user can open a server that listens on a port in this workspace at %s, with <port> replaced by the port number. When you start a dev server or any web app, give the user that URL.\n' "$preview_pattern"
+  else
+    printf -- '- This deployment has no wildcard app hostname, so the user reaches a port in this workspace with: coder port-forward %s --tcp <port>:<port>\n' "$ws"
+  fi
+  if [ -n "$url" ]; then
+    printf -- '- The user can open this workspace in VS Code with %s or in a browser terminal at %s.\n' "$vscode_url" "$terminal_url"
+  fi
+  printf -- '- The user can run %s for links, ports, and repository state.\n' "$status_cmd"
+}
+
+# ---------- session state ----------
+
+# Not CLAUDE_PLUGIN_DATA: hooks get it but /coder-workspace-status does
+# not, and both have to find the same files.
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/coder-workspace-status"
+baseline_file="$state_dir/${session_id:-default}.ports"
+# Without a session id (coder-status text run by hand), the newest baseline is
+# the one to use.
+if [ ! -f "$baseline_file" ] && [ "$mode" = "text" ]; then
+  newest=""
+  for f in "$state_dir"/*.ports; do
+    if [ -f "$f" ] && { [ -z "$newest" ] || [ "$f" -nt "$newest" ]; }; then newest="$f"; fi
+  done
+  [ -n "$newest" ] && baseline_file="$newest"
+fi
+
+# ---------- deployment facts ----------
+
+# run_coder runs the coder CLI with a time limit, where timeout(1) exists.
+run_coder() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 5 coder "$@"
+  else
+    coder "$@"
+  fi
+}
+
+# online prints true when the Coder deployment answers, false when it doesn't,
+# and null when there's nothing to ask.
+online() {
+  if [ -z "$url" ] || ! command -v curl >/dev/null 2>&1; then
+    echo null
+    return
+  fi
+  case "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "$url/healthz" 2>/dev/null)" in
+    200) echo true ;;
+    *) echo false ;;
+  esac
+}
+
+app_suffix=""
+app_scheme="https"
+if [ -n "$port_uri" ]; then
+  app_scheme="${port_uri%%://*}"
+  p="${port_uri#*://}"
+  s="${p#"{{port}}--$(lower "$agent")--$(lower "$ws")--$(lower "$owner")"}"
+  [ "$s" != "$p" ] && app_suffix="$s"
+fi
+
+# app_jq turns an agent's apps into what the card shows: name, the link the
+# dashboard would open, kind, and the local port the app serves, if any.
+# Takes $root, the workspace's dashboard path. Reads $suffix and $scheme (the
+# wildcard app hostname), $base (the deployment URL).
+# shellcheck disable=SC2016 # a jq program: its $names are jq variables.
+app_jq='
+	def lport: ((.url // "") | capture("^https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:(?<p>[0-9]+))?") | .p | tonumber?) // null;
+	def app($root): select(.hidden | not) | {
+		slug: (.slug // ""),
+		name: ([.display_name, .slug] | map(select(. != null and . != "")) | first // "app"),
+		kind: (if .external then "external" elif (.command // "") != "" then "command" elif .subdomain then "subdomain" else "path" end),
+		url: (if .external then ((.url // "") | if test("^https?://") and (contains("$SESSION_TOKEN") | not) then . else null end)
+			elif (.command // "") != "" then (if $base != "" then $root + "/terminal?app=" + (.slug | @uri) else null end)
+			elif .subdomain then (if $suffix != "" and (.subdomain_name // "") != "" then $scheme + "://" + ((.subdomain_name + $suffix) | ascii_downcase) + "/" else null end)
+			elif $base != "" then $root + "/apps/" + (.slug | @uri) + "/"
+			else null end),
+		port: (if .external or (.command // "") != "" then null else lport end)
+	};'
+
+# workspace_api prints this workspace's facts from the Coder API as one JSON
+# object, or nothing when the coder CLI isn't logged in:
+#   stopsAt    autostop in epoch seconds, or null
+#   outdated   a newer template version exists
+#   healthy    Coder's health check for the workspace
+#   lifecycle  this agent's state: starting, ready, start_error, ...
+#   scripts    this agent's startup scripts: name, status (running, ok,
+#              exit_failure, timed_out, ...), and exit code
+#   apps       this agent's apps, as app_jq describes them, with health
+# An answer is kept for a minute (ten seconds while the agent starts) and a
+# failure for 30 seconds, so the mod's 5-second refresh rarely reaches the API.
+api_cache="$state_dir/api.json"
+workspace_api() {
+  local now age ttl out
+  command -v coder >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  now="$(date +%s)"
+  if [ -f "$api_cache" ]; then
+    age=$((now - $(stat -c %Y "$api_cache" 2>/dev/null || echo 0)))
+    ttl=60
+    if [ ! -s "$api_cache" ]; then
+      ttl=30
+    elif grep -q '"lifecycle":"starting"' "$api_cache"; then
+      ttl=10
+    fi
+    if [ "$age" -lt "$ttl" ]; then
+      cat "$api_cache"
+      return 0
+    fi
+  fi
+  out="$(run_coder list -o json 2>/dev/null | jq -c \
+    --arg id "${CODER_WORKSPACE_ID:-}" --arg n "$ws" --arg agent "$agent" \
+    --arg suffix "$app_suffix" --arg scheme "$app_scheme" --arg base "$url" \
+    --arg root "$url/@$owner/$ws${agent:+.$agent}" "$app_jq"'
+		def epoch: if . == null or . == "" or startswith("0001-") then null
+			else (try (sub("\\.[0-9]+"; "") | sub("(\\+00:00)?$"; "") | sub("Z?$"; "Z") | fromdateiso8601) catch null) end;
+		map(select(if $id != "" then .id == $id else .name == $n end)) | first // empty |
+		([.latest_build.resources[]?.agents[]? | select($agent == "" or .name == $agent)] | first) as $a |
+		{
+			stopsAt: (.latest_build.deadline | epoch),
+			outdated: (.outdated // false),
+			healthy: (.health.healthy // true),
+			lifecycle: ($a.lifecycle_state // null),
+			scripts: [($a.scripts // [])[] | select(.run_on_start) | {
+				id: .log_source_id,
+				name: .display_name,
+				status: (.status // (if $a.lifecycle_state == "starting" then "running" else "unknown" end)),
+				exit: .exit_code
+			}],
+			apps: [($a.apps // [])[] | . as $x | app($root) + {health: $x.health}]
+		}' 2>/dev/null)"
+  mkdir -p "$state_dir" 2>/dev/null
+  printf '%s' "$out" >"$api_cache" 2>/dev/null
+  printf '%s' "$out"
+}
+
+# local_scripts prints the agent's scripts as JSON, from the agent's own log,
+# without any token: each script's log path, whether it's running, and how its
+# last run ended. Names aren't in the log; scripts_json adds them from the
+# manifest.
+agent_log="${CODER_AGENT_LOG_DIR:-/tmp}/coder-agent.log"
+local_scripts() {
+  [ -r "$agent_log" ] || {
+    printf '[]'
+    return
+  }
+  grep -E 'initializing agent scripts|running agent script|script completed|script failed' "$agent_log" 2>/dev/null | awk '
+	function field(name,   m) {
+		if (match($0, name "=[^ ]+")) return substr($0, RSTART + length(name) + 1, RLENGTH - length(name) - 1)
+		return ""
+	}
+	# The agent (re)starts its scripts: forget the runs before.
+	/initializing agent scripts/ { split("", seen); split("", order); n = 0; next }
+	# "reporting script completed" is about telling coderd, not the script.
+	/reporting/ { next }
+	{
+		id = field("log_source_id"); if (id == "") next
+		if (!(id in seen)) { seen[id] = 1; order[++n] = id }
+		lp[id] = field("log_path")
+		if ($0 ~ /running agent script/) { state[id] = "running"; code[id] = "null" }
+		else if ($0 ~ /script failed/) { state[id] = "exit_failure"; c = field("exit_code"); code[id] = (c == "" ? "null" : c) }
+		else { c = field("exit_code"); state[id] = (c == "" || c == "0") ? "ok" : "exit_failure"; code[id] = (c == "" ? "null" : c) }
+	}
+	END {
+		printf "["
+		for (i = 1; i <= n; i++) {
+			id = order[i]
+			printf "%s{\"id\":\"%s\",\"log\":\"%s\",\"status\":\"%s\",\"exit\":%s}", (i > 1 ? "," : ""), id, lp[id], state[id], code[id]
+		}
+		printf "]"
+	}'
+}
+
+# local_manifest prints this agent's apps and scripts as JSON, from the
+# manifest the agent's local debug server serves without a token. The
+# manifest changes only when the agent reconnects, so an answer is kept for a
+# minute. Health in it dates from then, so the card asks the ports instead.
+debug_addr="${CODER_AGENT_DEBUG_ADDRESS:-127.0.0.1:2113}"
+case "$debug_addr" in
+  :*) debug_addr="127.0.0.1$debug_addr" ;;
+  0.0.0.0:* | "[::]:"*) debug_addr="127.0.0.1:${debug_addr##*:}" ;;
+esac
+manifest_cache="$state_dir/manifest.json"
+local_manifest() {
+  local now age out
+  command -v jq >/dev/null 2>&1 || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  now="$(date +%s)"
+  if [ -f "$manifest_cache" ]; then
+    age=$((now - $(stat -c %Y "$manifest_cache" 2>/dev/null || echo 0)))
+    if [ "$age" -lt 60 ]; then
+      cat "$manifest_cache"
+      return 0
+    fi
+  fi
+  out="$(curl -s -m 2 "http://$debug_addr/debug/manifest" 2>/dev/null | jq -c \
+    --arg owner "$owner" --arg ws "$ws" --arg agent "$agent" --arg base "$url" \
+    --arg suffix "$app_suffix" --arg scheme "$app_scheme" "$app_jq"'
+		. as $m
+		| (if $owner != "" then $owner else ($m.owner_name // "") end) as $ow
+		| (if $ws != "" then $ws else ($m.workspace_name // "") end) as $wn
+		| (if $agent != "" then $agent else ($m.agent_name // "") end) as $ag
+		| ($base + "/@" + $ow + "/" + $wn + (if $ag != "" then "." + $ag else "" end)) as $root
+		| {
+			apps: [($m.apps // [])[] | app($root)],
+			scripts: [($m.scripts // [])[] | {id: .log_source_id, name: .display_name, start: (.run_on_start // false)}]
+		}' 2>/dev/null)"
+  mkdir -p "$state_dir" 2>/dev/null
+  printf '%s' "$out" >"$manifest_cache" 2>/dev/null
+  printf '%s' "$out"
+}
+
+# apps_json prints the agent's apps: what app_jq gives, plus whether
+# something listens on the app's port (up, null when it has none) and, with a
+# logged-in coder CLI, Coder's health check. The manifest needs no token; the
+# API is the fallback.
+apps_json() {
+  local man api open
+  command -v jq >/dev/null 2>&1 || {
+    printf '[]'
+    return
+  }
+  man="$(local_manifest)"
+  api="$(workspace_api)"
+  open="$(listening | tr '\n' ' ')"
+  jq -nc --argjson man "${man:-null}" --argjson api "${api:-null}" --arg open "$open" '
+		($open | split(" ") | map(select(. != "") | tonumber)) as $open
+		| (($api.apps // []) | map({key: (.slug // .name // ""), value: .health}) | from_entries) as $health
+		| (if ($man.apps // []) | length > 0 then $man.apps else ($api.apps // []) end)
+		| map(. as $a | . + {
+			up: (if $a.port == null then null else ($open | any(. == $a.port)) end),
+			health: ($health[$a.slug // $a.name // ""] // null)
+		})' 2>/dev/null || printf '[]'
+}
+
+# scripts_json prints {named, list}: the startup scripts and how each run
+# went. The agent's log says how; the manifest, or the Coder API, says which
+# scripts run at start and what they're called (named). Without either, the
+# list is every script in the log, by log source.
+scripts_json() {
+  local live man api
+  live="$(local_scripts)"
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '{"named":false,"list":%s}' "${live:-[]}"
+    return
+  fi
+  man="$(local_manifest)"
+  api="$(workspace_api)"
+  jq -nc --argjson live "${live:-[]}" --argjson man "${man:-null}" --argjson api "${api:-null}" '
+		($live | map({key: .id, value: .}) | from_entries) as $byId
+		| (($api.scripts // []) | map({key: .id, value: .}) | from_entries) as $apiById
+		| ($api.lifecycle // "") as $lc
+		| (if ($man.scripts // []) | length > 0 then [$man.scripts[] | select(.start) | {id, name}]
+			elif ($api.scripts // []) | length > 0 then [$api.scripts[] | {id, name}]
+			else null end) as $known
+		| if $known == null then {named: false, list: [$live[] | . + {name: (if (.log // "") | test("coder-startup-script\\.log$") then "startup script" else "script " + .id[0:8] end)}]}
+		else {named: true, list: [$known[] | . as $k | ($byId[$k.id] // {}) as $l | ($apiById[$k.id] // {}) as $x | {
+			id: $k.id,
+			name: $k.name,
+			log: ($l.log // null),
+			status: ($l.status // $x.status // (if $lc == "starting" then "running" else "unknown" end)),
+			exit: ($l.exit // $x.exit // null)
+		}]} end' 2>/dev/null || printf '{"named":false,"list":%s}' "${live:-[]}"
+}
+
+# status_json prints the status for the mod. Each port says whether it opened
+# since the session started (new) or was already listening.
+status_json() {
+  local r name branch changed unpushed upstream worktree port proc u first=true others=0 m d is_new
+  printf '{"workspace":%s,"agent":%s,"dashboard":%s,"terminal":%s,"vscode":%s,"warnPct":%s,"command":%s' \
+    "$(printf '%s' "$ws_label" | json_str)" "$(printf '%s' "$agent" | json_str)" \
+    "$(printf '%s' "$dashboard_url" | json_str)" "$(printf '%s' "$terminal_url" | json_str)" \
+    "$(printf '%s' "$vscode_url" | json_str)" \
+    "${warn_pct//[!0-9]/}" "$(printf '%s' "$status_cmd" | json_str)"
+  m="$(mem_pct)"
+  d="$(disk_pct)"
+  printf ',"mem":%s,"disk":%s,"repos":[' "${m:-null}" "${d:-null}"
+  while read -r r; do
+    [ -n "$r" ] || continue
+    IFS="$(printf '\t')" read -r name branch worktree changed unpushed upstream <<<"$(repo_state "$r")"
+    $first || printf ','
+    first=false
+    printf '{"name":%s,"branch":%s,"changed":%s,"unpushed":%s,"upstream":%s,"worktree":%s}' \
+      "$(printf '%s' "$name" | json_str)" "$(printf '%s' "$branch" | json_str)" \
+      "${changed:-0}" "${unpushed:-0}" "$(printf '%s' "$upstream" | json_str)" "$([ "$worktree" = true ] && echo true || echo false)"
+  done <<<"$(list_repos)"
+  printf '],"ports":['
+  first=true
+  while IFS="$(printf '\t')" read -r port proc; do
+    [ -n "$port" ] || continue
+    is_new=true
+    if [ -f "$baseline_file" ] && grep -qx "$port" "$baseline_file"; then
+      others=$((others + 1))
+      is_new=false
+    fi
+    u="$(preview_url "$port" || true)"
+    $first || printf ','
+    first=false
+    printf '{"port":%s,"process":%s,"url":%s,"new":%s}' "$port" "$(printf '%s' "$proc" | json_str)" "$(printf '%s' "$u" | json_str)" "$is_new"
+  done <<<"$(list_ports)"
+  local api
+  api="$(workspace_api)"
+  printf '],"otherPorts":%s,"online":%s,"now":%s,"api":%s,"apps":%s,"startup":%s}\n' \
+    "$others" "$(online)" "$(date +%s)" "${api:-null}" "$(apps_json)" "$(scripts_json)"
+}
+
+# ---------- modes ----------
+
+case "$mode" in
+  context)
+    # Ports already listening now belong to the workspace, not the session.
+    # After /clear or a compaction the session goes on, and so does its
+    # baseline.
+    mkdir -p "$state_dir" 2>/dev/null
+    case "$source_kind" in
+      clear | compact) [ -f "$baseline_file" ] || list_ports | cut -f1 >"$baseline_file" 2>/dev/null ;;
+      *) list_ports | cut -f1 >"$baseline_file" 2>/dev/null ;;
+    esac
+    printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' "$(claude_context | json_str)"
+    ;;
+  json)
+    # The mod's first call in a session finds no baseline and makes one.
+    if [ -n "$session_id" ] && [ ! -f "$state_dir/$session_id.ports" ]; then
+      mkdir -p "$state_dir" 2>/dev/null
+      baseline_file="$state_dir/$session_id.ports"
+      list_ports | cut -f1 >"$baseline_file" 2>/dev/null
+    fi
+    status_json
+    ;;
+  text | *)
+    card full
+    ;;
+esac
+exit 0
