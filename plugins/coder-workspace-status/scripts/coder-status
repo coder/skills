@@ -153,6 +153,34 @@ proc_label() {
   if [ "${#comm}" -eq 15 ] && [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
     IFS= read -r -d "" arg <"/proc/$pid/cmdline" && [ -n "$arg" ] && comm="$(basename "${arg%% *}")"
   fi
+  # A program started through the dynamic loader, as bundled runtimes do
+  # (ld-linux-x86-64.so.2 --library-path DIR PROGRAM), is named after PROGRAM.
+  case "$comm" in
+    ld-linux* | ld-*.so* | ld.so*)
+      if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
+        {
+          IFS= read -r -d '' arg
+          while IFS= read -r -d '' arg; do
+            if $skip; then
+              skip=false
+              continue
+            fi
+            case "$arg" in
+              --library-path | --preload | --audit | --argv0 | --glibc-hwcaps-prepend | --glibc-hwcaps-mask)
+                skip=true
+                continue
+                ;;
+              -*) continue ;;
+            esac
+            comm="$(basename "$arg")"
+            comm="${comm%.real}"
+            break
+          done
+        } <"/proc/$pid/cmdline"
+        skip=false
+      fi
+      ;;
+  esac
   case "$comm" in
     node | nodejs | bun | deno | python | python3* | ruby | java | php | perl | sh | bash) ;;
     *" ("*)
