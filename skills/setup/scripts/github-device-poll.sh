@@ -22,6 +22,10 @@
 
 set -euo pipefail
 
+# curl rewrites the cookie jar, which ends up holding the admin
+# session token; keep it and every other file owner-only.
+umask 0077
+
 ACCESS_URL="${ACCESS_URL:?must be set}"
 STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/coder-install}"
 JAR="$STATE_DIR/github-device.jar"
@@ -92,7 +96,6 @@ TOKEN="$(awk '$6 == "coder_session_token" { print $7 }' "$JAR" | tail -1)"
 
 CFG="${CODER_CONFIG_DIR:-$HOME/.config/coderv2}"
 mkdir -p "$CFG"
-umask 0077
 echo "Writing Coder server URL to $CFG/url" >&2
 printf '%s' "$ACCESS_URL" >"$CFG/url"
 echo "Writing Coder admin session token to $CFG/session" >&2

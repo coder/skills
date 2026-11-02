@@ -24,6 +24,10 @@
 
 set -euo pipefail
 
+# The cookie jar and env file hold OAuth state; create every file
+# and directory owner-only from the start.
+umask 0077
+
 ACCESS_URL="${ACCESS_URL:?must be set}"
 STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/coder-install}"
 mkdir -p "$STATE_DIR"
@@ -73,7 +77,6 @@ print(f"INTERVAL={int(d.get('interval', 5))}")
 print(f"EXPIRES_IN={int(d.get('expires_in', 900))}")
 print(f"STATE={shlex.quote(state)}")
 PY
-chmod 0600 "$DEV_FILE"
 
 # 1d. Print the values once so the calling agent can read them
 #     out of stdout as well as the file. This script returns
